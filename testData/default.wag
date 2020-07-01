@@ -1,0 +1,15 @@
+-- Format follow String:option | String : (String:option, string:option,..) recursively
+-- file names and partds in double quotes "bleh"
+
+--csv file for data input
+input:"Wheeler2012.csv" 
+outgroup :B
+stub : "test"  -- inputFilename by default
+output : "Wheeler2012.tre" -- inputFilename.tre by default
+additionSequence : random:10
+firstPairChoice : closest 
+refinement : otu
+buildSet : unique:10   -- keeping trees after initial Wagner build
+outputSet : best:10   -- keeping trees after refinement
+keepSet : first   -- to allow for random keeping of trees--problem is in termination not guaranteed used for refinement
+excludedTaxa : "namesToDelete.txt"

@@ -1,0 +1,16 @@
+-- Format follow String:option | String : (String:option, string:option,..) recursively
+-- file names and partds in double quotes "bleh"
+-- (:Int are optional)
+
+--csv file for data input
+input:"filename" 
+outgroup :taxon/leaf name
+stub : "file stub for dot ouput"  -- inputFilename by default
+output : "file for newick output" -- inputFilename.tre by default
+additionSequence : best | asis | random:Int > 0
+firstPairChoice : closest | furthest | random
+refinement : none | OTU | SPR | TBR
+buildSet : all | best(:Int) | unique(:Int)    -- keeping trees after initial Wagner build
+outputSet : all | best(:Int) | unique(:Int)   -- keeping trees after refinement
+keepSet : first | last | random  -- to allow for random keeping of trees--problem is in termination not guaranteed used for refinement
+excludedTaxa : "filename" -- taxa to be excluded from analysis after read in

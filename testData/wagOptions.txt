@@ -1,0 +1,8 @@
+input:Bantu500-lang.distance.csv 
+additionSeqeunce:closest 
+outgroup:Yor 
+replicates:random=1000 
+refinement:TBR 
+buildKeep:best=10 
+refinementKeep:best=10
+stub:Bantu-1
