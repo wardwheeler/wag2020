@@ -46,12 +46,12 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Sort as S
 
+-- | Matrix type as Vector of Vectors
+type Matrix a = V.Vector (V.Vector a)
+
 -- | functions for triples
 fst3 :: (a,b,c) -> a
 fst3 (d,_,_) = d
-
--- | Matrix type as Vector of Vectors
-type Matrix a = V.Vector (V.Vector a)
 
 -- | empty matrix value from Vector
 empty :: Matrix a
@@ -169,7 +169,6 @@ updateMatrix inM modList =
 
 -- | updateRows takes the section of the matrix containing rows that wil be modified
 -- (some not) and modifes or copies rows and rerns a Matrix (vector of roow vectors)
--- doesn't do "smart" update of rows, but recursively till no more for that row
 updateRows :: (Show a, Eq a) => Matrix a -> [(Int, Int, a)] -> Int -> Matrix a
 updateRows inM tripList currentRow =
     if L.null tripList then inM
@@ -182,11 +181,12 @@ updateRows inM tripList currentRow =
         else -- account for multiple modifications to same row
             let (newRow, newTripList) = modifyRow firstOrigRow columnIndex value currentRow (L.tail tripList)
             in
-            newRow `V.cons` (updateRows (V.tail inM) newTripList (currentRow + 1))
+            -- This for debug--remove after test
+            if (V.length newRow) /= (V.length firstOrigRow) then error ("Modified row not correct length " ++ (show newRow) ++ " -> " ++ (show firstOrigRow))
+            else newRow `V.cons` (updateRows (V.tail inM) newTripList (currentRow + 1))
 
 -- | modifyRow takes an initial modification (column and value) and then checks to see if there are more modifications in that
 -- row (rowNumber) in the remainder of the list of modifications, returning the new row and mod list as a pair
--- need to make this smarter to avoid multiple copies in row.
 -- assumes that sorted triples sort by first, second, then third elements
 modifyRow :: V.Vector a -> Int -> a -> Int -> [(Int, Int, a)] -> (V.Vector a, [(Int, Int, a)])
 modifyRow inRow colIndex value rowNumber modList =
@@ -197,13 +197,20 @@ modifyRow inRow colIndex value rowNumber modList =
             newRow = firstPart V.++ (value `V.cons` remainderPart)
         in 
         if L.null modList then (newRow, modList)
-        else 
-            let (nextRowNumber, nextColNumber, nextValue) = L.head modList
-            in
-            if nextRowNumber /= rowNumber then (newRow, modList) 
-            else modifyRow newRow nextColNumber nextValue rowNumber (L.tail modList)
+        else continueRow (firstPart `V.snoc` value) inRow (colIndex + 1) rowNumber modList
             
 
-
-
+-- | continueRow continues to modify a row with multiple column modifcations
+continueRow :: V.Vector a ->V.Vector a -> Int -> Int -> [(Int, Int, a)] -> (V.Vector a, [(Int, Int, a)])
+continueRow partRow origRow colIndex rowNumber modList =
+    if colIndex == V.length origRow then (partRow, modList) --completed row
+    else if L.null modList then                             --no more modifications
+        (partRow V.++ (V.unsafeDrop colIndex origRow), modList)
+    else 
+        let (nextRowNumber, nextColIndex, nextValue) = L.head modList
+        in
+        if nextRowNumber /= rowNumber then (partRow V.++ (V.unsafeDrop colIndex origRow), modList)
+        else 
+            if nextColIndex /= colIndex then continueRow (partRow `V.snoc` (origRow V.! colIndex)) origRow (colIndex + 1) rowNumber modList
+            else continueRow (partRow `V.snoc` nextValue) origRow (colIndex + 1) rowNumber (L.tail modList)
 
