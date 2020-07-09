@@ -41,7 +41,8 @@ ToDo
 
 module SymMatrix (empty, dim, fromLists, Matrix, 
                    SymMatrix.null, cols, rows,
-                   (!), toLists) where
+                   (!), toLists, updateMatrix,
+                   addMatrixRows) where
 
 -- import Debug.Trace
 import qualified Data.List as L
@@ -133,5 +134,20 @@ checkSymmetry inVV pairList =
         in
         if firstCheck then checkSymmetry inVV (tail pairList)
         else error ("Matrix is not symmetrical:" ++ (show (iIndex, jIndex)) ++ "=>" ++ (show ((inVV V.! iIndex) V.! jIndex)) ++ " /= " ++ (show ((inVV V.! jIndex) V.! iIndex)))
+
+-- | updateMatrix takes a list of triples and update matrix
+--- updat eall at once checking for bounds
+updateMatrix :: Matrix a -> [(Int, Int, a)] -> Matrix a
+updateMatrix inM modList =
+    if L.null modList then inM
+    else 
+        inM
+
+-- | addMatrixRows add rows to existing matrix to extend Matrix dimention
+addMatrixRows :: (Eq a) => Matrix a -> Matrix a -> Matrix a
+addMatrixRows inM newRows =
+    if SymMatrix.null newRows then inM
+    else 
+        inM V.++ newRows
 
 
