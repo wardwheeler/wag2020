@@ -151,11 +151,11 @@ reIndexTriple trip@(iIndex, jIndex, value) =
 -- | updateMatrix takes a list of triples and update matrix
 -- update all at once checking for bounds
 -- could naively do each triple in turn, but would be alot of copying
-updateMatrix :: (Eq a, Show a) => Matrix a -> [(Int, Int, a)] -> Matrix a
+updateMatrix :: (Eq a, Show a, Ord a) => Matrix a -> [(Int, Int, a)] -> Matrix a
 updateMatrix inM modList =
     if L.null modList then inM
     else 
-        let orderedTripleList = S.uniqueSortOn fst3 $ fmap reIndexTriple modList
+        let orderedTripleList = S.uniqueSort $ fmap reIndexTriple modList
             minRow = fst3 $ head orderedTripleList
             maxRow = fst3 $ last orderedTripleList
         in
@@ -186,6 +186,8 @@ updateRows inM tripList currentRow =
 
 -- | modifyRow takes an initial modification (column and value) and then checks to see if there are more modifications in that
 -- row (rowNumber) in the remainder of the list of modifications, returning the new row and mod list as a pair
+-- need to make this smarter to avoid multiple copies in row.
+-- assumes that sorted triples sort by first, second, then third elements
 modifyRow :: V.Vector a -> Int -> a -> Int -> [(Int, Int, a)] -> (V.Vector a, [(Int, Int, a)])
 modifyRow inRow colIndex value rowNumber modList =
     if colIndex >= (V.length inRow) then error ("Column to modify is outside length of row " ++ (show $ (rowNumber, colIndex)))

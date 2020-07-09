@@ -47,8 +47,9 @@ executable wag2020
                 , text
                 , logfloat
                 , monad-parallel
+                , sort
                 
 
   default-language: Haskell2010
 
-  other-modules:  
+  other-modules:  SymMatrix
