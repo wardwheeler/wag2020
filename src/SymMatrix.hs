@@ -38,7 +38,7 @@ Portability :  portable (I hope)
 module SymMatrix (empty, dim, fromLists, Matrix, 
                    SymMatrix.null, cols, rows,
                    (!), toLists, updateMatrix,
-                   addMatrixRows) where
+                   addMatrixRows, showMatrixNicely) where
 
 -- import Debug.Trace
 import qualified Data.List as L
@@ -58,15 +58,17 @@ empty :: Matrix a
 empty = G.empty
 
 -- | dim returns dimmension (rows = cols)
-dim :: Matrix a -> (Int, Int)
-dim inMatrix = (V.length inMatrix, V.length inMatrix)
+dim :: (Eq a) => Matrix a -> (Int, Int)
+dim inMatrix = 
+    if SymMatrix.null inMatrix then (0,0) 
+    else (V.length inMatrix, V.length inMatrix)
 
 -- | rows returns number rows in Matrix (rows = cols)
-rows :: Matrix a -> Int
+rows :: (Eq a) => Matrix a -> Int
 rows inM = fst $ dim inM
 
 -- | cols returns number cols in Matrix (rows = cols)
-cols :: Matrix a -> Int
+cols :: (Eq a) => Matrix a -> Int
 cols inM = fst $ dim inM
 
 -- | null returns True of row number is 0
@@ -201,6 +203,7 @@ modifyRow inRow colIndex value rowNumber modList =
             
 
 -- | continueRow continues to modify a row with multiple column modifcations
+-- assumes that sorted triples sorted by first, second, then third elements
 continueRow :: V.Vector a ->V.Vector a -> Int -> Int -> [(Int, Int, a)] -> (V.Vector a, [(Int, Int, a)])
 continueRow partRow origRow colIndex rowNumber modList =
     if colIndex == V.length origRow then (partRow, modList) --completed row
@@ -213,4 +216,20 @@ continueRow partRow origRow colIndex rowNumber modList =
         else 
             if nextColIndex /= colIndex then continueRow (partRow `V.snoc` (origRow V.! colIndex)) origRow (colIndex + 1) rowNumber modList
             else continueRow (partRow `V.snoc` nextValue) origRow (colIndex + 1) rowNumber (L.tail modList)
+
+-- | makeNiceRow pretty preints a list
+makeNiceRow :: (Show a) => V.Vector a -> String
+makeNiceRow aVect =
+  if V.null aVect then "\n"
+  else
+    show (V.head aVect) ++ " " ++  makeNiceRow (V.tail aVect)
+
+-- | showNicely pretty prins matrix
+showMatrixNicely :: (Show a, Eq a) => Matrix a -> String
+showMatrixNicely inM =
+  let mRows = rows inM
+      mCols = cols inM
+      niceRows = V.map makeNiceRow inM
+  in
+  ("Dimensions: :" ++ show mRows ++ " " ++ show mCols ++ "\n" ++ concat niceRows)
 
