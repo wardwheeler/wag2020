@@ -37,7 +37,8 @@ Portability :  portable (I hope)
 
 module SymMatrix (empty, dim, fromLists, Matrix, 
                    SymMatrix.null, cols, rows,
-                   (!), toLists, updateMatrix,
+                   (!), toLists, toRows, fromRows,
+                   isSymmetric, updateMatrix,
                    addMatrixRows, showMatrixNicely) where
 
 -- import Debug.Trace
@@ -74,6 +75,20 @@ cols inM = fst $ dim inM
 -- | null returns True of row number is 0
 null :: (Eq a) => Matrix a -> Bool
 null inMatrix = inMatrix == empty
+
+-- | isSymmetric is true by defineition--when creted error if not
+isSymmetric :: (Eq a) => Matrix a -> Bool
+isSymmetric inM = 
+    if SymMatrix.null inM then error "Nulll martix in isSymmetric"
+    else True
+
+-- | fromRows creates a lower diagonal matrix (with diagonal)
+fromRows :: (Eq a, Show a) => [V.Vector a] -> Matrix a
+fromRows inVectList = fromLists $ fmap V.toList inVectList
+
+-- | toRows converts a Matrix to a list of Vectors
+toRows :: (Eq a, Show a) => Matrix a -> [V.Vector a]
+toRows inM = V.toList inM 
 
 -- | fromLists takes list of list of a and returns lower diagnoal (with diagonal)
 -- matrix as Matrix (Vector of Vectors)

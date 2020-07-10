@@ -73,8 +73,6 @@ import Debug.Trace
 import Data.List
 import Data.Maybe
 import qualified Data.Vector as V hiding (replicateM)
--- From matrices package (so 0 based)
-import Data.Matrix as M
 import Text.ParserCombinators.Parsec
 import Data.CSV
 import Control.Parallel.Strategies
@@ -92,6 +90,11 @@ import qualified Data.Number.Transfinite as NT
 import qualified System.Random as Rand
 import qualified System.Random.Shuffle as RandS
 import System.IO.Unsafe
+-- From matrices package (so 0 based)
+-- import Data.Matrix as M
+
+-- Local lower diag, boxed, immutable matrices
+import qualified SymMatrix as M
 
 
 type Vertex = Int
@@ -184,23 +187,6 @@ seqParMap strat f =
   if getNumThreads > 1 then parmap strat f
   else fmap f
 
--- | makeNiceRow pretty preints a list
-makeNiceRow :: (Show a) => [a] -> String
-makeNiceRow aList =
-  if null aList then "\n"
-  else
-    show (head aList) ++ " " ++  makeNiceRow (tail aList)
-
--- | showNicely pretty prins matrix
-showNicely :: (Show a) => M.Matrix a -> String
-showNicely inM =
-  let mRows = M.rows inM
-      mCols = M.cols inM
-      mListList = M.toLists inM
-      niceRows = fmap makeNiceRow mListList
-  in
-  ("Dimensions: :" ++ show mRows ++ " " ++ show mCols ++ "\n" ++ concat niceRows)
-
 -- | getMatrixMinPair takes distMatrix initla pinteger pair and value
 -- traverses teh matrix and return minimum distance and index pair
 -- if tie takes first
@@ -212,8 +198,8 @@ getMatrixMinPair distMatrix curBest curRow curColumn
   | otherwise =
   let (_, _, currentBestDistance) = curBest
   in
-  if  distMatrix ! (curRow, curColumn) < currentBestDistance then
-    getMatrixMinPair distMatrix (curRow, curColumn, distMatrix ! (curRow, curColumn)) curRow (curColumn + 1)
+  if  distMatrix M.! (curRow, curColumn) < currentBestDistance then
+    getMatrixMinPair distMatrix (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
   else getMatrixMinPair distMatrix curBest curRow (curColumn + 1)
 
 
@@ -228,8 +214,8 @@ getMatrixMaxPair distMatrix curBest curRow curColumn
   | otherwise =
   let (_, _, currentBestDistance) = curBest
   in
-  if  distMatrix ! (curRow, curColumn) > currentBestDistance then
-    getMatrixMaxPair distMatrix (curRow, curColumn, distMatrix ! (curRow, curColumn)) curRow (curColumn + 1)
+  if  distMatrix M.! (curRow, curColumn) > currentBestDistance then
+    getMatrixMaxPair distMatrix (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
   else getMatrixMaxPair distMatrix curBest curRow (curColumn + 1)
 
 
@@ -261,9 +247,9 @@ addToEdgeSwap :: M.Matrix Double -> Int -> Tree -> Int -> Edge -> (Double, Tree,
 addToEdgeSwap distMatrix leaf initialTree newLeafIndex inEdge =
   let (eVertex, uVertex, inWeight) = inEdge
       (initialVertexVect, initialEdgeVect) = initialTree
-      addCost = ((distMatrix ! (leaf, eVertex)) + (distMatrix ! (leaf, uVertex)) - (distMatrix ! (eVertex, uVertex))) / 2.0
-      eVertLeafDist = (distMatrix ! (leaf, eVertex)) - addCost
-      uVertLeafDist = (distMatrix ! (leaf, uVertex)) - addCost
+      addCost = ((distMatrix M.! (leaf, eVertex)) + (distMatrix M.! (leaf, uVertex)) - (distMatrix M.! (eVertex, uVertex))) / 2.0
+      eVertLeafDist = (distMatrix M.! (leaf, eVertex)) - addCost
+      uVertLeafDist = (distMatrix M.! (leaf, uVertex)) - addCost
       newVertexVect = V.snoc initialVertexVect leaf
       newEdges = V.fromList [(leaf,newLeafIndex, addCost),(eVertex, newLeafIndex, eVertLeafDist),(uVertex, newLeafIndex, uVertLeafDist)]
       cleanupEdges = V.filter (/= inEdge) initialEdgeVect
@@ -281,9 +267,9 @@ addToEdge distMatrix leaf initialTree newLeafIndex inEdge =
   -- trace ("In addToEdge with " ++ (show (leaf, initialTree, newLeafIndex, (M.rows distMatrix), inEdge))) (
   let (eVertex, uVertex, _) = inEdge
       (initialVertexVect, initialEdgeVect) = initialTree
-      addCost = ((distMatrix ! (leaf, eVertex)) + (distMatrix ! (leaf, uVertex)) - (distMatrix ! (eVertex, uVertex))) / 2.0
-      eVertLeafDist = (distMatrix ! (leaf, eVertex)) - addCost
-      uVertLeafDist = (distMatrix ! (leaf, uVertex)) - addCost
+      addCost = ((distMatrix M.! (leaf, eVertex)) + (distMatrix M.! (leaf, uVertex)) - (distMatrix M.! (eVertex, uVertex))) / 2.0
+      eVertLeafDist = (distMatrix M.! (leaf, eVertex)) - addCost
+      uVertLeafDist = (distMatrix M.! (leaf, uVertex)) - addCost
       newVertexVect = V.snoc initialVertexVect leaf
       newEdges = V.fromList [(leaf,newLeafIndex, addCost),(eVertex, newLeafIndex, eVertLeafDist),(uVertex, newLeafIndex, uVertLeafDist)]
       cleanupEdges = V.filter (/= inEdge) initialEdgeVect
@@ -516,7 +502,7 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
       in
       [(newickTree, fst wagnerResult, treeCost, snd wagnerResult)]
   else if addSequence == "asis" then
-      let initialTree = (V.fromList[0, 1],V.fromList [(0, 1, distMatrix ! (0,1))])
+      let initialTree = (V.fromList[0, 1],V.fromList [(0, 1, distMatrix M.! (0,1))])
           leavesToAdd = V.fromList [2..(nOTUs-1)]
           asIsResult = makeTreeFromOrder distMatrix initialTree nOTUs nOTUs leavesToAdd
           treeCost = getTreeCost $ fst asIsResult -- V.sum $ V.map getEdgeCost asIsEdges
@@ -829,9 +815,9 @@ contractEdges distMatrix nOTUs edgeVect index allEdges
 -- rowID is the row (or column) of distance Matrix
 getDistance :: M.Matrix Double -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Double
 getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVertex rowID =
-  let first  = (origDist ! (rowID, leafIndex)) - addCost
-      second = (origDist ! (rowID, eVertex)) - eVertLeafDist
-      third  = (origDist ! (rowID, uVertex)) - uVertLeafDist
+  let first  = (origDist M.! (rowID, leafIndex)) - addCost
+      second = (origDist M.! (rowID, eVertex)) - eVertLeafDist
+      third  = (origDist M.! (rowID, uVertex)) - uVertLeafDist
   in
   maximum [first, second, third]
 
@@ -1557,9 +1543,7 @@ main =
 
     -- Convert to matrix of Doubles
     let distMatrix = M.fromLists $ fmap (fmap (read :: String -> Double)) (tail rawData')
-    if not (M.isSymmetric distMatrix) then error "Distance matrix is not symmetric"
-    else hPutStrLn stderr "Matrix is symmetric"
-
+    
     -- Callan random shuffle
     let randomAddsToDo = getRandomReps addSequence
     let testLeavesVect = V.fromList [0..(V.length leafNames - 1)]
