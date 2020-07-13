@@ -577,14 +577,16 @@ getBestTrees keepMethod number inList curBestCost curBestTrees =
 
 
 -- | getUniqueTrees saves uniqe newick trees
+-- different paths--ehnce different distMatrices coud result in same newick tree
 getUniqueTrees :: [TreeWithData] -> [TreeWithData] -> [TreeWithData]
 getUniqueTrees inList uniqueList =
   if null inList then uniqueList
   else
     let firstTree = head inList
+        fstNewick = fst4 firstTree
         -- (firstTreeNewick, firstTreeTree) = firstTree
     in
-    if firstTree `notElem` uniqueList then getUniqueTrees (tail inList) (firstTree : uniqueList)
+    if fstNewick `notElem` (fmap fst4 uniqueList) then getUniqueTrees (tail inList) (firstTree : uniqueList)
     else getUniqueTrees (tail inList) uniqueList
 
 -- | keepTrees filters newick trees based on options
@@ -710,6 +712,7 @@ updateVertexNUmbersOnEdges eVert uVert edgeList nOTUs =
       V.cons newVertex (updateVertexNUmbersOnEdges eVert uVert (V.tail edgeList) nOTUs)
      -- )
 
+{-
 -- | updateRow updates row of distance matrix (shortens) based on deleteing two vertex entries
 -- assume 1st is higher and second lower
 updateRow :: Vertex -> Vertex -> [Double] -> Int -> Int -> Int -> Edge -> Edge -> [Double]
@@ -752,6 +755,21 @@ updateDistMatrix eVert uVert distMatrix nOTUs c1Edge c2Edge =
       distListList = M.toLists distMatrix
   in
   M.fromLists $ makeNewRows hVert lVert distListList nOTUs 0 c1Edge c2Edge
+-}
+
+-- | updateDistMatrix updates distance matrix to remove eVertex and uVertex columns and rows as in updateVertexNUmbersOnEdges
+-- update costs for two contracte edges c1Edge and c2Edge
+-- the distance update takes place first and row/coumn removal second
+-- this to keep the proper indices (since the non-deleted rows and columns indices are changed) 
+updateDistMatrix :: Vertex -> Vertex ->  M.Matrix Double -> Int -> Edge -> Edge -> M.Matrix Double
+updateDistMatrix eVert uVert distMatrix nOTUs c1Edge c2Edge =
+  let validEdgeList = filter ((>= 0).fst3) [c1Edge, c2Edge]
+      newMatrix = M.updateMatrix distMatrix validEdgeList
+      newMatrix' = M.deleteRowsAndColumns newMatrix (filter (> (nOTUs - 1)) [eVert, uVert])
+  in
+  -- trace (M.showMatrixNicely newMatrix') 
+  newMatrix'
+  
 
 
 -- | getEndVertices takes a pair of edges and returns the non-index vertices
@@ -821,37 +839,25 @@ getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVert
   in
   maximum [first, second, third]
 
--- | addNewColumn add a new column and rw to existing data matrix
-addNewColumn :: V.Vector (V.Vector Double) -> V.Vector Double -> V.Vector Double -> V.Vector (V.Vector Double)
-addNewColumn oldRows newDistColumn totalColumn =
-  if V.null oldRows then
-    let newRow = V.snoc totalColumn (0.0 :: Double)-- add for final
-    in V.singleton newRow
-  else
-    --add elemtn to row 
-    let thisRow = V.head oldRows
-        newElement = V.head newDistColumn
-        newRow = V.snoc thisRow newElement
-    in
-    V.cons newRow (addNewColumn (V.tail oldRows) (V.tail newDistColumn) totalColumn)
-
--- | getNewDistMatrix distMatrix addCost eVertLeafDist uVertLeafDist
--- should be complete for leaves already added in addition to eddgs yet to add
--- adds a single new column
+-- | getNewDistMatrix takes distMatrix and adds Cost for new eVertLeafDist uVertLeafDist
+-- created in build process (new HTUs)
+-- should be complete (on input) for leaves already added (initail paiwise distances and HTUs added) 
+-- adds a single new row (minus last 0.0 as new row at end) which is appended
 getNewDistMatrix :: M.Matrix Double -> Double -> Double -> Double -> Int -> Int -> Int -> M.Matrix Double
 getNewDistMatrix origDist addCost eVertLeafDist uVertLeafDist eVertex uVertex leafIndex =
-    -- need to add distances from new vertex to leaves not yet added to tree
-    -- create list of distances between each remaining OTU and ht enew HUT
-    -- everyhting else add NT.infinity as a place holder
-    let columnHolder = V.fromList [0..(M.rows origDist - 1)]
-        newDistColumn = V.map (getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVertex) columnHolder
+    let columnHolder = V.fromList [0..(M.rows origDist - 1)] -- List of HTU and OTU indices in pairwise dist matrix
+        newDistRow = V.map (getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVertex) columnHolder
+        newDistRow' = newDistRow `V.snoc` (0.0 :: Double) 
     in
+    M.addMatrixRow origDist newDistRow'
+    {-
     --This is a waste--change structure
     let oldRows = V.fromList (M.toRows origDist)
-        newRows = addNewColumn oldRows newDistColumn newDistColumn
+        newRows = addNewColumn oldRows newDistRow newDistRow
     in
     M.fromRows (V.toList newRows)
     --)
+    -}
 
 -- | enterNewEdgeCost cretes new row of costs from edge vectors 
 -- infty NT.infinity if not there
@@ -864,17 +870,6 @@ enterNewEdgeCost columnNumber edgeVect rowNumber =
     in
     if (columnNumber == a && rowNumber == b) || (columnNumber == b && rowNumber == a) then weight else enterNewEdgeCost columnNumber (V.tail edgeVect) rowNumber
 
--- | addTwoColumns add succesive elements of two input columns to rows in head fasion for constant time
-addTwoColumns :: [[Double]] -> [Double] -> [Double] -> [[Double]]
-addTwoColumns inMatrixLists colI colII =
-  if null inMatrixLists then []
-  else
-      let firstRow = head inMatrixLists
-          firstI = head colI
-          firstII = head colII
-      in
-      (firstRow ++ [firstI, firstII]) : addTwoColumns (tail inMatrixLists) (tail colI) (tail colII)
-
 -- | addEdgesToDistMatrix adds new edges from internal node join to existing matrix
 -- 0 if not created so only the two new vertices and the edges they touch (3 each)
 -- so need to add two columns and two rows, for new vertices I, and II (here numIn and numIn + 1)
@@ -885,16 +880,22 @@ getNewDistMatrixInternal inMatrix newEdgeVect =
   else
     let numIn = M.rows inMatrix
         columnHolder = [0..(numIn - 1)]
-        newDistColumnI = fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder ++ [0.0, enterNewEdgeCost numIn newEdgeVect (numIn + 1)]
-        newDistColumnII = fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
+        -- newDistColumnI = fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder ++ [0.0, enterNewEdgeCost numIn newEdgeVect (numIn + 1)]
+        -- newDistColumnII = fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
+        newDistColumnI = (fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder) ++ [0.0]
+        newDistColumnII = (fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder) ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
+        {-
         --This is a waste--change structure
         oldRows = M.toLists inMatrix
         newRows = addTwoColumns oldRows newDistColumnII newDistColumnII
         newLists = newRows ++ [newDistColumnI, newDistColumnII]
+        -}
     in
+    M.addMatrices inMatrix  (V.fromList [V.fromList newDistColumnI, V.fromList newDistColumnII])
+    {-
     M.fromLists newLists
     -- )
-
+    -}
 
 -- | connectEdges takes two vectors of edges and adds and edge between the two in edgesToConnect
 -- this deletes the two old edges from the edge Vectors and creates a new tree with the five new edges
@@ -1021,13 +1022,15 @@ splitTree distMatrix inTree inTreeCost edgeToRemove =
       uMergedEdge = contractEdges distMatrix nOTUs uEdges uVertex edgeVect
 
       -- remove non-contracted edges and add in contracted edges
-      eSubEdges' = V.cons  eMergedEdge (subtractVector eEdges eSubEdges)
+      eSubEdges' = V.cons eMergedEdge (subtractVector eEdges eSubEdges)
       uSubEdges' = V.cons uMergedEdge (subtractVector uEdges uSubEdges)
 
       -- need to know this order for SPR/TBR so which edge was in which set
       previousEdges = V.fromList [eMergedEdge, uMergedEdge]
 
       -- map new HTU indices in edges and create new distance matrix
+      -- HTU indices are updated first--then values updated in distMatrix as rows/columns are
+      -- deleted to remove info from delted edge
       eSubEdges'' = updateVertexNUmbersOnEdges eVertex uVertex (V.map orderEdge eSubEdges') nOTUs
       uSubEdges'' = updateVertexNUmbersOnEdges eVertex uVertex (V.map orderEdge uSubEdges') nOTUs
       previousEdges'' = updateVertexNUmbersOnEdges eVertex uVertex (V.map orderEdge previousEdges) nOTUs
@@ -1095,7 +1098,7 @@ reAddTerminals rejoinType curBestCost leafNames outGroup split =
 
 -- | getVectorAllVectorPairs takes two vectors and creates a vector of avector of two elements each for each
 -- pairwise combinatrion of elements
-getVectorAllVectorPairs :: V.Vector a -> V.Vector a -> V.Vector (V.Vector a)
+getVectorAllVectorPairs :: V.Vector a -> V.Vector a -> M.Matrix a
 getVectorAllVectorPairs firstVect secondVect =
   if V.null firstVect then V.empty
   else
@@ -1543,7 +1546,7 @@ main =
 
     -- Convert to matrix of Doubles
     let distMatrix = M.fromLists $ fmap (fmap (read :: String -> Double)) (tail rawData')
-    
+
     -- Callan random shuffle
     let randomAddsToDo = getRandomReps addSequence
     let testLeavesVect = V.fromList [0..(V.length leafNames - 1)]

@@ -39,9 +39,10 @@ module SymMatrix (empty, dim, fromLists, Matrix,
                    SymMatrix.null, cols, rows,
                    (!), toLists, toRows, fromRows,
                    isSymmetric, updateMatrix,
-                   addMatrixRows, showMatrixNicely) where
+                   addMatrixRow, addMatrices,
+                   deleteRowsAndColumns, showMatrixNicely) where
 
--- import Debug.Trace
+import Debug.Trace
 import qualified Data.List as L
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
@@ -152,12 +153,21 @@ checkSymmetry inVV pairList =
         if firstCheck then checkSymmetry inVV (tail pairList)
         else error ("Matrix is not symmetrical:" ++ (show (iIndex, jIndex)) ++ "=>" ++ (show ((inVV V.! iIndex) V.! jIndex)) ++ " /= " ++ (show ((inVV V.! jIndex) V.! iIndex)))
 
--- | addMatrixRows add rows to existing matrix to extend Matrix dimention
-addMatrixRows :: (Eq a) => Matrix a -> Matrix a -> Matrix a
-addMatrixRows inM newRows =
-    if SymMatrix.null newRows then inM
+-- | addMatrixRow add a row to existing matrix to extend Matrix dimension
+-- used when adding HTU distances to existing distance matrix as Wagner tree is built
+addMatrixRow :: (Eq a) => Matrix a -> V.Vector a -> Matrix a
+addMatrixRow inM newRow =
+    if V.null newRow then inM
     else 
-        inM V.++ newRows
+        inM `V.snoc` newRow
+
+
+-- | addMatrices  adds a Matrix to existing matrix to extend Matrix dimension
+addMatrices :: (Eq a) => Matrix a -> Matrix a -> Matrix a
+addMatrices inM newMatrix =
+    if SymMatrix.null newMatrix then inM
+    else 
+        inM V.++ newMatrix
 
 -- | reIndexTriple taske (i,j,k) and returns (max i j, min i j, k)
 reIndexTriple :: (Ord a) => (a, a, b) -> (a, a, b)
@@ -176,13 +186,17 @@ updateMatrix inM modList =
             minRow = fst3 $ head orderedTripleList
             maxRow = fst3 $ last orderedTripleList
         in
-        if maxRow >= rows inM then error ("Update matrix out of bounds, row = " ++ (show $ rows inM) ++ " and trying to update row " ++ (show maxRow))
+        if minRow < 0 then error ("Update matrix out of bounds: " ++ (show orderedTripleList))
+        else if maxRow >= rows inM then error ("Update matrix out of bounds, row = " ++ (show $ rows inM) ++ " and trying to update row " ++ (show maxRow))
         else
             let firstPart = V.unsafeTake minRow inM
                 restPart  = V.unsafeDrop minRow inM
                 modifiedRemainder = updateRows restPart orderedTripleList minRow 
             in
-            addMatrixRows firstPart modifiedRemainder
+            -- trace ("Modifying : " ++ (show modList) ++ "\n" ++ showMatrixNicely firstPart) (
+            -- trace (showMatrixNicely $ addMatrices firstPart modifiedRemainder) 
+            addMatrices firstPart modifiedRemainder
+            -- )
 
 -- | updateRows takes the section of the matrix containing rows that wil be modified
 -- (some not) and modifes or copies rows and rerns a Matrix (vector of roow vectors)
@@ -248,3 +262,34 @@ showMatrixNicely inM =
   in
   ("Dimensions: :" ++ show mRows ++ " " ++ show mCols ++ "\n" ++ concat niceRows)
 
+-- | deleteRowsAndColumns take a list of rows (and same index for columns)
+-- to delete from Matrix. Uses lisyt to do in single pass
+deleteRowsAndColumns :: (Show a, Eq a) => Matrix a -> [Int] -> Matrix a
+deleteRowsAndColumns inM deleteList =
+    if L.null deleteList then inM
+    else deleteRC inM deleteList (rows inM) 0
+
+
+-- | deleteRC takes matri delete list and counter to delte coumns and rows
+deleteRC :: (Show a, Eq a) => Matrix a -> [Int] -> Int -> Int -> Matrix a
+deleteRC inM deleteList origRows rowCounter =
+    if rowCounter == origRows then empty
+    else 
+        let firstRow = V.head inM
+            toKeep = rowCounter `L.notElem` deleteList
+            newRow = deleteColumn firstRow deleteList (rowCounter + 1) 0
+        in
+        if toKeep then newRow `V.cons` (deleteRC (V.tail inM) deleteList origRows (rowCounter + 1))
+        else deleteRC (V.tail inM) deleteList origRows (rowCounter + 1)
+
+-- | deleteColumn takes a row of a matrix (lower diagnonal), its length, 
+-- a list of cilumns to delete and a column counter and creates a new row
+deleteColumn :: (Show a, Eq a) => V.Vector a -> [Int] -> Int -> Int -> V.Vector a
+deleteColumn origRow deleteList rowLength colCounter =
+    if colCounter == rowLength then V.empty
+    else 
+        let firstValue = V.head origRow 
+            toKeep = colCounter `L.notElem` deleteList
+        in
+        if toKeep == True then firstValue `V.cons` (deleteColumn (V.tail origRow) deleteList rowLength (colCounter + 1))
+        else deleteColumn (V.tail origRow) deleteList rowLength (colCounter + 1)
