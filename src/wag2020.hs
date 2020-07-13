@@ -764,7 +764,7 @@ updateDistMatrix eVert uVert distMatrix nOTUs c1Edge c2Edge =
 updateDistMatrix :: Vertex -> Vertex ->  M.Matrix Double -> Int -> Edge -> Edge -> M.Matrix Double
 updateDistMatrix eVert uVert distMatrix nOTUs c1Edge c2Edge =
   let validEdgeList = filter ((>= 0).fst3) [c1Edge, c2Edge]
-      newMatrix = M.updateMatrix distMatrix validEdgeList
+      newMatrix = M.unsafeUpdateMatrix distMatrix validEdgeList
       newMatrix' = M.deleteRowsAndColumns newMatrix (filter (> (nOTUs - 1)) [eVert, uVert])
   in
   -- trace (M.showMatrixNicely newMatrix') 

@@ -38,11 +38,12 @@ Portability :  portable (I hope)
 module SymMatrix (empty, dim, fromLists, Matrix, 
                    SymMatrix.null, cols, rows,
                    (!), toLists, toRows, fromRows,
-                   isSymmetric, updateMatrix,
+                   isSymmetric, updateMatrix, 
+                   unsafeUpdateMatrix,
                    addMatrixRow, addMatrices,
                    deleteRowsAndColumns, showMatrixNicely) where
 
-import Debug.Trace
+-- import Debug.Trace
 import qualified Data.List as L
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
@@ -198,6 +199,19 @@ updateMatrix inM modList =
             addMatrices firstPart modifiedRemainder
             -- )
 
+-- | unsafeUpdateMatrix unsafe version of updateMatrix
+unsafeUpdateMatrix :: (Eq a, Show a, Ord a) => Matrix a -> [(Int, Int, a)] -> Matrix a
+unsafeUpdateMatrix inM modList =
+    if L.null modList then inM
+    else 
+        let orderedTripleList = S.uniqueSort $ fmap reIndexTriple modList
+            minRow = fst3 $ head orderedTripleList
+            firstPart = V.unsafeTake minRow inM
+            restPart  = V.unsafeDrop minRow inM
+            modifiedRemainder = updateRows restPart orderedTripleList minRow 
+        in
+        addMatrices firstPart modifiedRemainder
+        
 -- | updateRows takes the section of the matrix containing rows that wil be modified
 -- (some not) and modifes or copies rows and rerns a Matrix (vector of roow vectors)
 updateRows :: (Show a, Eq a) => Matrix a -> [(Int, Int, a)] -> Int -> Matrix a
@@ -213,8 +227,10 @@ updateRows inM tripList currentRow =
             let (newRow, newTripList) = modifyRow firstOrigRow columnIndex value currentRow (L.tail tripList)
             in
             -- This for debug--remove after test
-            if (V.length newRow) /= (V.length firstOrigRow) then error ("Modified row not correct length " ++ (show newRow) ++ " -> " ++ (show firstOrigRow))
-            else newRow `V.cons` (updateRows (V.tail inM) newTripList (currentRow + 1))
+            --if (V.length newRow) /= (V.length firstOrigRow) then error ("Modified row not correct length " ++ (show newRow) ++ " -> " ++ (show firstOrigRow))
+            --else 
+            newRow `V.cons` (updateRows (V.tail inM) newTripList (currentRow + 1))
+
 
 -- | modifyRow takes an initial modification (column and value) and then checks to see if there are more modifications in that
 -- row (rowNumber) in the remainder of the list of modifications, returning the new row and mod list as a pair
