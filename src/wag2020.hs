@@ -40,10 +40,9 @@ Initial implementation stright Farris 1972
   closest taxon to be added 
 
 To do:
-  Perhaps change Matrix type since got back and forth to lists of Vectors
-   when updating distance matrix
   Perhaps change matrix and cost functions to split since can't use lazyness to not calculate
     them in parallel. (sequential would do fine)--mutable?
+  
   Test parallelism at top level down--check "rpar" and "rseq" versus "rdeepseq" and other parallism options to prioritize
   high level first
 
@@ -1096,6 +1095,30 @@ reAddTerminals rejoinType curBestCost leafNames outGroup split =
       if minAdditionCost > delta then []
       else sieveTrees delta curBestCost additionList leafNames outGroup [])
 
+
+-- | add leaf to an edge creating new tree with distances and add cost, also augmented distance matrix
+-- but this for swap so returns entire new3-edge cost  so not Farris triangle it is sum of three diveded by 2
+addToEdgeSwapRecurse :: Double -> M.Matrix Double -> Int -> Tree -> Int -> V.Vector Edge -> (Double, Tree, M.Matrix Double)
+addToEdgeSwapRecurse inDelta distMatrix leaf initialTree newLeafIndex inEdgeVect =
+  if V.null inEdgeVect then (inDelta, initialTree, distMatrix)
+  else 
+    let inEdge@(eVertex, uVertex, inWeight) = V.head inEdgeVect
+        (initialVertexVect, initialEdgeVect) = initialTree
+        addCost = ((distMatrix M.! (leaf, eVertex)) + (distMatrix M.! (leaf, uVertex)) - (distMatrix M.! (eVertex, uVertex))) / 2.0
+        eVertLeafDist = (distMatrix M.! (leaf, eVertex)) - addCost
+        uVertLeafDist = (distMatrix M.! (leaf, uVertex)) - addCost
+        newVertexVect = V.snoc initialVertexVect leaf
+        newEdges = V.fromList [(leaf,newLeafIndex, addCost),(eVertex, newLeafIndex, eVertLeafDist),(uVertex, newLeafIndex, uVertLeafDist)]
+        cleanupEdges = V.filter (/= inEdge) initialEdgeVect
+        newEdgeVect = cleanupEdges V.++ newEdges
+        newTree = (newVertexVect, newEdgeVect)
+        -- add new costs from added vertex to each reamaining leaf
+        augmentedDistMatrix = getNewDistMatrix distMatrix addCost eVertLeafDist uVertLeafDist eVertex uVertex leaf
+        newDelta = addCost + eVertLeafDist + uVertLeafDist - inWeight
+    in
+    if (newDelta < inDelta) then (newDelta, newTree, augmentedDistMatrix)
+    else addToEdgeSwapRecurse inDelta distMatrix leaf initialTree newLeafIndex (V.tail inEdgeVect)
+
 -- | getVectorAllVectorPairs takes two vectors and creates a vector of avector of two elements each for each
 -- pairwise combinatrion of elements
 getVectorAllVectorPairs :: V.Vector a -> V.Vector a -> M.Matrix a
@@ -1118,6 +1141,33 @@ createVectorEdgePairs pairSet previousEdges eEdgeVect uEdgeVect
     V.map (V.cons eEdgePrev) $ V.map V.singleton uEdgeVect
   | pairSet == "tbr" = getVectorAllVectorPairs eEdgeVect uEdgeVect
   | otherwise = error ("Pair set option " ++ pairSet ++ " not implemented")
+
+
+-- | addEdgeToSplitRecurse like addToEdgeSplit but recursiblye yeilds a single best tree
+addEdgeToSplitRecurse :: V.Vector Edge -> V.Vector Edge -> Edge -> Edge -> M.Matrix Double -> V.Vector (V.Vector Edge) -> (Double, Tree, M.Matrix Double) -> (Double, Tree, M.Matrix Double)
+addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix edgesToConnectVect origTriple@(inDelta, _, _) =
+  if V.null edgesToConnectVect then origTriple
+  else 
+    let edgesToConnect = V.head edgesToConnectVect
+    in
+    if V.null eEdges &&  V.null uEdges then error "Empty e/u Edge vectors in addEdgeToSplit"
+    else if V.null edgesToConnect then error "Empty eEdge vector in addEdgeToSplit"
+    else if fst3 (V.head eEdges) == (-1) then -- adding eOTU, V.last since the (-1,-1,0) edge should always be first
+      let (newDelta, newTree, newMatrix) = addToEdgeSwap distMatrix (fst3 eTerminal) (V.empty, uEdges) (M.rows distMatrix) (V.last edgesToConnect)
+      in 
+      if (newDelta < inDelta) then (newDelta, newTree, newMatrix)
+      else addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix (V.tail edgesToConnectVect) origTriple
+    else if fst3 (V.head uEdges) == (-1) then -- adding uOTU
+      let (newDelta, newTree, newMatrix) = addToEdgeSwap distMatrix (fst3 uTerminal) (V.empty, eEdges) (M.rows distMatrix) (V.last edgesToConnect)
+      in 
+      if (newDelta < inDelta) then (newDelta, newTree, newMatrix)
+      else addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix (V.tail edgesToConnectVect) origTriple
+    else -- both internal edges
+      let (newDelta, newTree, newMatrix) = connectEdges distMatrix eEdges uEdges edgesToConnect
+      in 
+      if (newDelta < inDelta) then (newDelta, newTree, newMatrix)
+      else addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix (V.tail edgesToConnectVect) origTriple
+
 
 -- | doSPRTBR takes split tree and rejoins by creating edges from a single one of the first edge set to each of the mebers of the second
 -- important that e and u edges come in correct order and previous edges are e and u sets in order as well
@@ -1148,6 +1198,60 @@ doSPRTBR rejoinType curBestCost leafNames outGroup  split =
           in
           if minAdditionCost > delta then []
           else sieveTrees delta curBestCost additionList leafNames outGroup []
+
+
+-- | doSPRTBRSteep like doSPRTBR but only saves a sinlge (and better) tree
+doSPRTBRSteep :: String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData
+doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTree, _, inMatrix) =
+  -- trace ("In doSPRTBR") (
+  let (eEdgeVect, uEdgeVect, delta, previousEdges, distMatrix) = split
+  in
+  if V.null eEdgeVect || V.null uEdgeVect then error "Empty edge vectors in doSPRTBR"
+  else
+      if fst3 (V.head eEdgeVect) == snd3 (V.head eEdgeVect) then -- if an OTU call readdTerminal
+        let newLeafIndex = M.rows distMatrix
+            -- keep whole uEdgeVect so recheck input tree edges
+            (newDelta, newTree, newMatrix) = addToEdgeSwapRecurse delta distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex uEdgeVect
+            newCost = curBestCost - delta + newDelta
+            newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
+        in
+        if (newCost < curBestCost) then (newickTree, newTree, newCost, newMatrix)
+        else origTree
+      else -- internal edge or edge with two OTUs as vertices
+          -- check to make sure edges are where they should be can remove later
+          -- fix e edge and join to each u edge for SPR (n^2)
+          let edgesToConnect = createVectorEdgePairs rejoinType previousEdges eEdgeVect uEdgeVect
+              -- e and u terminal should not be used here since OTUs are shortcircuited above
+              eTerminal = (-1,-1,0)
+              uTerminal = (-1,-1,0)
+              (newDelta, newTree, newMatrix) = addEdgeToSplitRecurse eEdgeVect uEdgeVect eTerminal uTerminal distMatrix edgesToConnect (delta, inTree, inMatrix)
+              newCost = curBestCost - delta + newDelta
+              newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
+          in
+          if (newCost < curBestCost) then (newickTree, newTree, newCost, newMatrix)
+          else origTree
+
+
+-- | reAddTerminalsSteep like readdTerminals but only returns one tree keeping better 
+reAddTerminalsSteep :: String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData
+reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
+  if rejoinType /= "otu" then error ("Incorrect swap function in reAddTerminals: " ++ rejoinType)
+  else
+    let (eEdgeVect, uEdgeVect, delta, _, distMatrix) = split
+        nOTUs = V.length leafNames
+    in
+    if (V.length eEdgeVect > 1) || ((fst3 (V.head eEdgeVect) /= snd3 (V.head eEdgeVect)) && (fst3 (V.head eEdgeVect) < nOTUs) && (snd3 (V.head eEdgeVect) < nOTUs)) then origTree
+    else if M.rows distMatrix /= ((2 * nOTUs) - 3) then error ("Dist Matrix incorrect size " ++ show (M.dim distMatrix) ++ " should be " ++ show ((2 * nOTUs) - 3, (2 * nOTUs) - 3))
+    else
+      let newLeafIndex = M.rows distMatrix
+      -- take tail of uEdgeVect so not regerate input tree
+          (newDelta, newTree, newMatrix) = addToEdgeSwapRecurse delta distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex uEdgeVect -- (V.tail uEdgeVect) -- tail so not hit original tree, leave all to reestimate if necesary
+          newCost = curBestCost - delta + newDelta
+          newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
+      in
+      if (newCost < curBestCost) then (newickTree, newTree, newCost, newMatrix)
+      else origTree
+
 
 
 -- | filterNewTreesOnCost returns list of all unique new best cost trees from list
@@ -1183,6 +1287,39 @@ getSaveNumber :: String -> Int
 getSaveNumber inString =
   if length inString == 4 then maxBound :: Int
   else (read $ drop 5 inString) :: Int
+
+-- | splitJoin does both split and rejoin operations in a fashion that if a better (shorter) tree is found is shortcircuits and 
+-- begins again on the new tree, else proceeds untill all splits and joins are completed, but only on a single tree
+splitJoin :: TreeWithData -> (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> V.Vector String -> Int -> V.Vector Edge -> TreeWithData
+splitJoin curTreeWithData@(_, curTree, curTreeCost, curTreeMatrix) swapFunction refineType leafNames outGroup edgeVect = 
+  if V.null edgeVect then curTreeWithData -- All splits tested, nothing better found
+  else 
+    let firstEdge = V.head edgeVect
+        firstSplit = splitTree curTreeMatrix curTree curTreeCost firstEdge
+        firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
+    in
+    if firstTreeCost < curTreeCost then splitJoin firstTree swapFunction refineType leafNames outGroup (snd firstNewTree)
+    else splitJoin curTreeWithData swapFunction refineType leafNames outGroup (V.tail edgeVect)
+
+-- | getGeneralSwapSteepestOne performs refinement as in getGeneralSwap but saves on a single tree (per split/swap) and 
+-- immediately accepts a Better (shorter) tree and resumes the search on that new tree
+-- relies heavily on laziness of splitTree so not parallel at this level
+getGeneralSwapSteepestOne :: String -> (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> String -> V.Vector String -> Int -> [TreeWithData] -> [TreeWithData] -> [TreeWithData]
+getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup inTreeList savedTrees =
+  if null inTreeList then savedTrees
+  else
+      trace ("In "++ refineType ++ " Swap (steepest) with " ++ show (length inTreeList) ++ " trees with minimum length " ++ show (minimum $ fmap thd4 inTreeList)) (
+      let curFullTree@(_, (_, edgeVect), _, _) = head inTreeList
+          overallBestCost = minimum $ fmap thd4 savedTrees
+          -- unified split and rejoin
+          steepTree = splitJoin curFullTree swapFunction refineType leafNames outGroup edgeVect 
+          steepCost = thd4 steepTree
+      in
+      -- saving equal here so can be sent on to full equal tree refine later if nothing better is found
+      if steepCost < overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) [steepTree]
+      else if steepCost == overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) (steepTree : savedTrees)
+      else getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) savedTrees
+      )
 
 -- | getGeneralSwap performs a "re-add" of terminal identical to wagner build addition to available edges
 -- performed on all splits recursively until no more better/equal cost trees found
@@ -1235,23 +1372,25 @@ performRefinement :: String -> String -> String -> V.Vector String -> Int -> Tre
 performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
   | refinement == "none" = [inTree]
   | refinement == "otu" =
-    let newTrees = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
-    if not (null newTrees) then newTrees
+    if not (null newTrees') then newTrees'
     else
       trace "OTU swap did not find any new trees"
       [inTree]
   | refinement == "spr" =
-    let newTrees = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees'' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
-    if not (null newTrees') then newTrees'
+    if not (null newTrees'') then newTrees''
     else
       trace "SPR swap did not find any new trees"
       [inTree]
   | refinement == "tbr" =
-    let newTrees = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
         newTrees'' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees'') then newTrees''
