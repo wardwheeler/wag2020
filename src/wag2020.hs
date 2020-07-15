@@ -509,11 +509,13 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
       in
       [(newickTree, fst asIsResult, treeCost, snd asIsResult)]
   else if head addSequence == 'r' then
-      let (chunkSize, _) = quotRem (length replicateSequences) getNumThreads
-          randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize rpar -- was rseq not sure whats better
-          -- randomAddTrees = parmap rseq (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences
-      in
-      randomAddTrees
+      if (length replicateSequences) == 0 then error "Zero replicate additions specified--could be error in configuration file"
+      else 
+        let (chunkSize, _) = quotRem (length replicateSequences) getNumThreads
+            randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize rpar -- was rseq not sure whats better
+            -- randomAddTrees = parmap rseq (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences
+        in
+        randomAddTrees
   else error ("Addition sequence " ++ addSequence ++ " not implemented")
 
 -- | getRandomReps takes teh buyild arguemnrt and returns the number of random replicates 0 if not ranomd the numbewr otherwise
@@ -1228,7 +1230,7 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
               newCost = curBestCost - delta + newDelta
               newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
           in
-          if (newCost < curBestCost) then (newickTree, newTree, newCost, newMatrix)
+          if (newCost < curBestCost) then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
           else origTree
 
 
@@ -1249,7 +1251,7 @@ reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
           newCost = curBestCost - delta + newDelta
           newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
       in
-      if (newCost < curBestCost) then (newickTree, newTree, newCost, newMatrix)
+      if (newCost < curBestCost) then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
       else origTree
 
 
@@ -1290,35 +1292,44 @@ getSaveNumber inString =
 
 -- | splitJoin does both split and rejoin operations in a fashion that if a better (shorter) tree is found is shortcircuits and 
 -- begins again on the new tree, else proceeds untill all splits and joins are completed, but only on a single tree
-splitJoin :: TreeWithData -> (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> V.Vector String -> Int -> V.Vector Edge -> TreeWithData
-splitJoin curTreeWithData@(_, curTree, curTreeCost, curTreeMatrix) swapFunction refineType leafNames outGroup edgeVect = 
+splitJoin :: (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> V.Vector String -> Int -> V.Vector Edge -> TreeWithData -> TreeWithData
+splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData@(_, curTree, curTreeCost, curTreeMatrix) = 
   if V.null edgeVect then curTreeWithData -- All splits tested, nothing better found
   else 
     let firstEdge = V.head edgeVect
         firstSplit = splitTree curTreeMatrix curTree curTreeCost firstEdge
         firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
     in
-    if firstTreeCost < curTreeCost then splitJoin firstTree swapFunction refineType leafNames outGroup (snd firstNewTree)
-    else splitJoin curTreeWithData swapFunction refineType leafNames outGroup (V.tail edgeVect)
+    if firstTreeCost < curTreeCost then splitJoin swapFunction refineType leafNames outGroup (snd firstNewTree) firstTree
+    else splitJoin swapFunction refineType leafNames outGroup (V.tail edgeVect) curTreeWithData
+
+
+-- | splitJoinWrapper wraps around splitJoin to allow parallel execution
+-- the reason is to allow the consumption of "edgeVect" recursively within the same tree
+splitJoinWrapper :: (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> V.Vector String -> Int -> TreeWithData -> TreeWithData
+splitJoinWrapper swapFunction refineType leafNames outGroup curTreeWithData@(_, curTree, _, _) =
+    let edgeVect = snd curTree
+    in
+    splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData 
 
 -- | getGeneralSwapSteepestOne performs refinement as in getGeneralSwap but saves on a single tree (per split/swap) and 
 -- immediately accepts a Better (shorter) tree and resumes the search on that new tree
 -- relies heavily on laziness of splitTree so not parallel at this level
-getGeneralSwapSteepestOne :: String -> (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> String -> V.Vector String -> Int -> [TreeWithData] -> [TreeWithData] -> [TreeWithData]
-getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup inTreeList savedTrees =
+getGeneralSwapSteepestOne :: String -> (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> V.Vector String -> Int -> [TreeWithData] -> [TreeWithData] -> [TreeWithData]
+getGeneralSwapSteepestOne refineType swapFunction leafNames outGroup inTreeList savedTrees =
   if null inTreeList then savedTrees
   else
       trace ("In "++ refineType ++ " Swap (steepest) with " ++ show (length inTreeList) ++ " trees with minimum length " ++ show (minimum $ fmap thd4 inTreeList)) (
-      let curFullTree@(_, (_, edgeVect), _, _) = head inTreeList
-          overallBestCost = minimum $ fmap thd4 savedTrees
-          -- unified split and rejoin
-          steepTree = splitJoin curFullTree swapFunction refineType leafNames outGroup edgeVect 
-          steepCost = thd4 steepTree
+      let steepTreeList = seqParMap rseq (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
+          steepCost = minimum $ fmap thd4 steepTreeList 
       in
+      keepTrees steepTreeList "best" "first" steepCost
+      {-
       -- saving equal here so can be sent on to full equal tree refine later if nothing better is found
       if steepCost < overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) [steepTree]
       else if steepCost == overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) (steepTree : savedTrees)
       else getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) savedTrees
+      -}
       )
 
 -- | getGeneralSwap performs a "re-add" of terminal identical to wagner build addition to available edges
@@ -1372,7 +1383,7 @@ performRefinement :: String -> String -> String -> V.Vector String -> Int -> Tre
 performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
   | refinement == "none" = [inTree]
   | refinement == "otu" =
-    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
         newTrees' = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees') then newTrees'
@@ -1380,8 +1391,8 @@ performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
       trace "OTU swap did not find any new trees"
       [inTree]
   | refinement == "spr" =
-    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
         newTrees'' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees'') then newTrees''
@@ -1389,11 +1400,12 @@ performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
       trace "SPR swap did not find any new trees"
       [inTree]
   | refinement == "tbr" =
-    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep saveMethod keepMethod leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees'' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees'' = getGeneralSwapSteepestOne "tbr" doSPRTBRSteep leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees''' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees'' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
-    if not (null newTrees'') then newTrees''
+    if not (null newTrees''') then newTrees'''
     else
       trace "TBR swap did not find any new trees"
       [inTree]
