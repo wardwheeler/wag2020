@@ -1613,7 +1613,7 @@ makeNewData taxonIndexList inData rowNum
 -- with top line of taxon names
 deleteTaxa :: [String] -> [[String]] -> [[String]]
 deleteTaxa toDeleteList inData
-  | null inData = error "Empty data in deleteTaxa"
+  | null inData = error "Empty input data in deleteTaxa (empty data file)"
   | null toDeleteList = inData
   | otherwise =
     let taxonList = head inData
@@ -1663,7 +1663,7 @@ main =
     let keepMethod =  paramList !! 9
     let exludedTaxaFileName =  paramList !! 10 -- remove quotes
 
-    Prelude.mapM_ (hPutStrLn stderr) args
+    -- Prelude.mapM_ (hPutStrLn stderr) args
     csvResult <- parseFromFile csvFile dataFile
     let rawDataInit = case csvResult of
                       Left err -> error $ "Error parsing " ++ dataFile ++ " " ++ show err
@@ -1724,7 +1724,7 @@ main =
     writeFile outputTreeFile (unlines (fmap fst4 finalTrees))
 
     -- Output "dot" for graphviz
-      -- Convert to Graph format 
+      -- Convert to Graph (fgl) format 
     let graphList = fmap (convertToDirectedGraph leafNames outElem . snd4) finalTrees
 
       -- Convert to Dot format
