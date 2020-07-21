@@ -38,6 +38,7 @@ Portability :  portable (I hope)
 module SymMatrix (empty, dim, fromLists, Matrix, 
                    SymMatrix.null, cols, rows,
                    (!), toLists, toRows, fromRows,
+                   toFullLists, getFullRow,
                    isSymmetric, updateMatrix, 
                    unsafeUpdateMatrix,
                    addMatrixRow, addMatrices,
@@ -89,6 +90,7 @@ fromRows :: (Eq a, Show a) => [V.Vector a] -> Matrix a
 fromRows inVectList = fromLists $ fmap V.toList inVectList
 
 -- | toRows converts a Matrix to a list of Vectors
+-- unequal in length
 toRows :: (Eq a, Show a) => Matrix a -> [V.Vector a]
 toRows inM = V.toList inM 
 
@@ -116,6 +118,27 @@ toLists inM =
     if SymMatrix.null inM then []
     else 
         V.toList $ V.map V.toList inM
+
+-- | toFullLists takes a Matrix and returns a list of lists of full length
+-- square matrix
+toFullLists :: (Eq a, Show a) => Matrix a -> [[a]]
+toFullLists inM =
+    if SymMatrix.null inM then []
+    else 
+        fmap (getFullRow inM) [0..((rows inM) - 1)]
+
+-- | getFullRow returns a specific full row (is if matrix were square)
+-- as a list
+getFullRow :: (Eq a, Show a) => Matrix a -> Int -> [a]
+getFullRow inM index =
+    if SymMatrix.null inM then []
+    else
+        let firstPart = V.toList $ inM V.! index -- initial [0..index] of elements
+            restMatrix = V.drop (index + 1) inM
+            restByColumn = V.toList $ V.map (V.! index) restMatrix
+        in
+        firstPart ++ restByColumn
+
 
 -- | indexing lower diag matrix
 (!) :: Matrix a -> (Int, Int) -> a 
@@ -309,3 +332,4 @@ deleteColumn origRow deleteList rowLength colCounter =
         in
         if toKeep == True then firstValue `V.cons` (deleteColumn (V.tail origRow) deleteList rowLength (colCounter + 1))
         else deleteColumn (V.tail origRow) deleteList rowLength (colCounter + 1)
+        
