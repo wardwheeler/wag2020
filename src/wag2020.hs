@@ -186,6 +186,11 @@ seqParMap strat f =
   if getNumThreads > 1 then parmap strat f
   else fmap f
 
+
+
+myStrategy :: (NFData b) => Strategy b
+myStrategy = rdeepseq
+
 -- | getMatrixMinPair takes distMatrix initla pinteger pair and value
 -- traverses teh matrix and return minimum distance and index pair
 -- if tie takes first
@@ -512,7 +517,7 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
       if (length replicateSequences) == 0 then error "Zero replicate additions specified--could be error in configuration file"
       else 
         let (chunkSize, _) = quotRem (length replicateSequences) getNumThreads
-            randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize rpar -- was rseq not sure whats better
+            randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize myStrategy -- was rseq not sure whats better
             -- randomAddTrees = parmap rseq (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences
         in
         randomAddTrees
@@ -1298,7 +1303,7 @@ splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData@(_
   else 
     let firstEdge = V.head edgeVect
         firstSplit = splitTree curTreeMatrix curTree curTreeCost firstEdge
-        firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
+        !firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
     in
     if firstTreeCost < curTreeCost then splitJoin swapFunction refineType leafNames outGroup (snd firstNewTree) firstTree
     else splitJoin swapFunction refineType leafNames outGroup (V.tail edgeVect) curTreeWithData
@@ -1320,10 +1325,11 @@ getGeneralSwapSteepestOne refineType swapFunction leafNames outGroup inTreeList 
   if null inTreeList then savedTrees
   else
       trace ("In "++ refineType ++ " Swap (steepest) with " ++ show (length inTreeList) ++ " trees with minimum length " ++ show (minimum $ fmap thd4 inTreeList)) (
-      let steepTreeList = seqParMap rseq (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
+      let steepTreeList = seqParMap myStrategy (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
           steepCost = minimum $ fmap thd4 steepTreeList 
       in
-      keepTrees steepTreeList "best" "first" steepCost
+      --this to maintina the trajectories untill final swap--otherwise could converge down to single tree prematurely
+      keepTrees steepTreeList "unique" "first" steepCost
       {-
       -- saving equal here so can be sent on to full equal tree refine later if nothing better is found
       if steepCost < overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) [steepTree]
@@ -1348,10 +1354,10 @@ getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup 
           (_, curTree, curTreeCost, curTreeMatrix) = curFullTree
           -- parallelize here 
           -- splitTreeList = fmap (splitTree curTreeMatrix curTree curTreeCost) (snd curTree) -- `using` parListChunk chunkSize rdeepseq
-          splitTreeList = seqParMap rseq (splitTree curTreeMatrix curTree curTreeCost) (snd curTree)
+          splitTreeList = seqParMap myStrategy (splitTree curTreeMatrix curTree curTreeCost) (snd curTree)
           -- (chunkSize, _) = quotRem (length splitTreeList) getNumThreads
           -- firstTreeList = fmap (swapFunction refineType curTreeCost leafNames outGroup nOTUs) splitTreeList  `using` parListChunk chunkSize rdeepseq
-          firstTreeList = seqParMap rseq (swapFunction refineType curTreeCost leafNames outGroup) splitTreeList
+          firstTreeList = seqParMap myStrategy (swapFunction refineType curTreeCost leafNames outGroup) splitTreeList
           -- firstTreeList = V.map (reAddTerminals curBestCost leafNames outGroup nOTUs) splitTreeList
           firstTreeList' = filterNewTreesOnCost overallBestCost  (curFullTree : concat (V.toList firstTreeList)) savedTrees -- keepTrees (concat $ V.toList firstTreeList) saveMethod overallBestCost
       in
@@ -1383,27 +1389,27 @@ performRefinement :: String -> String -> String -> V.Vector String -> Int -> Tre
 performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
   | refinement == "none" = [inTree]
   | refinement == "otu" =
-    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let !newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        !newTrees' = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees') then newTrees'
     else
       trace "OTU swap did not find any new trees"
       [inTree]
   | refinement == "spr" =
-    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees'' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let !newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        !newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        !newTrees'' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees'') then newTrees''
     else
       trace "SPR swap did not find any new trees"
       [inTree]
   | refinement == "tbr" =
-    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees'' = getGeneralSwapSteepestOne "tbr" doSPRTBRSteep leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        newTrees''' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees'' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let !newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        !newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        !newTrees'' = getGeneralSwapSteepestOne "tbr" doSPRTBRSteep leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        !newTrees''' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees'' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees''') then newTrees'''
     else
@@ -1704,7 +1710,7 @@ main =
     -- let (chunkSize, _) = quotRem randomAddsToDo getNumThreads
     shuffledList <- CMP.replicateM randomAddsToDo (shuffleM testLeavesVect) -- `using` parListChunk chunkSize rdeepseq
 
-    let treeList = doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
+    let !treeList = doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
 
     -- Filter trees from build
     let filteredTrees = keepTrees treeList buildSelect keepMethod NT.infinity -- modify to keep Tree best as well
@@ -1712,7 +1718,7 @@ main =
     hPutStrLn stderr ("After build, there are " ++ show (length filteredTrees) ++ " saved trees at cost " ++ show (minimum $ fmap thd4 filteredTrees))
 
 
-    let refinedTrees = concat $ seqParMap rseq (performRefinement refinement saveMethod keepMethod leafNames outElem) filteredTrees
+    let !refinedTrees = concat $ seqParMap myStrategy (performRefinement refinement saveMethod keepMethod leafNames outElem) filteredTrees
 
     --finale keep 
     let finalTrees = keepTrees refinedTrees saveMethod keepMethod NT.infinity
