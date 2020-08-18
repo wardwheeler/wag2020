@@ -40,12 +40,6 @@ Initial implementation stright Farris 1972
   closest taxon to be added 
 
 To do:
-  Perhaps change matrix and cost functions to split since can't use lazyness to not calculate
-    them in parallel. (sequential would do fine)--mutable?
-  
-  Test parallelism at top level down--check "rpar" and "rseq" versus "rdeepseq" and other parallism options to prioritize
-  high level first
-
   Create compact Newick or other rep for equality conparison of trees
   
   Newick smaller subtree left, bigger right for figtree output
@@ -59,9 +53,7 @@ To do:
 
   confirm time complexity for OTU, SPR, TBR
 
-  add "steepest descent" on refinement
-
-  
+ 
 -}
 
 module Main where
