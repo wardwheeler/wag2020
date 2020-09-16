@@ -44,7 +44,6 @@ module SymMatrix (empty, dim, fromLists, Matrix,
                    addMatrixRow, addMatrices,
                    deleteRowsAndColumns, showMatrixNicely) where
 
--- import Debug.Trace
 import qualified Data.List           as L
 import qualified Data.Sort           as S
 import qualified Data.Vector         as V
