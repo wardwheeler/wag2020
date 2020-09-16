@@ -26,6 +26,7 @@ executable wag2020
                 -O2
                 -static
                 -XBangPatterns
+                -fwrite-ide-info
 
 --From matrices package (so 0 based)
 

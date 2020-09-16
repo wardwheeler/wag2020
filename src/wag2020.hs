@@ -1,18 +1,18 @@
 {- |
-Module      :  wag2020.hs 
-Description :  Progam to calcualte Wagner distance trees ala Farris 1972 
+Module      :  wag2020.hs
+Description :  Progam to calcualte Wagner distance trees ala Farris 1972
               -- but with added refinement based on 4-point metric
 Copyright   :  (c) 2020 Ward C. Wheeler, Division of Invertebrate Zoology, AMNH. All rights reserved.
-License     :  
+License     :
 
 Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met: 
+modification, are permitted provided that the following conditions are met:
 
 1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer. 
+   list of conditions and the following disclaimer.
 2. Redistributions in binary form must reproduce the above copyright notice,
    this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution. 
+   and/or other materials provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,7 +26,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 The views and conclusions contained in the software and documentation are those
-of the authors and should not be interpreted as representing official policies, 
+of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 
 Maintainer  :  Ward Wheeler <wheeler@amnh.org>
@@ -37,13 +37,13 @@ Initial implementation stright Farris 1972
   O(n^3)
   closest/furthest 2 taxa to start
   closest join for addition point
-  closest taxon to be added 
+  closest taxon to be added
 
 To do:
   Create compact Newick or other rep for equality conparison of trees
-  
+
   Newick smaller subtree left, bigger right for figtree output
-  
+
   Test keep options and swapping on multiple input trees from build
 
   precision for showing branch lengths could be an input option ie 0 for not showing them at all.
@@ -53,39 +53,38 @@ To do:
 
   confirm time complexity for OTU, SPR, TBR
 
- 
+
 -}
+{-# LANGUAGE BangPatterns #-}
 
 module Main where
 
-import System.IO
-import System.Environment
-import Debug.Trace
-import Data.List
-import Data.Maybe
-import qualified Data.Vector as V hiding (replicateM)
-import Text.ParserCombinators.Parsec
-import Data.CSV
-import Control.Parallel.Strategies
-import Control.Concurrent
+import           Control.Concurrent
+import           Control.Parallel.Strategies
+import           Data.CSV
+import           Data.List
+import           Data.Maybe
+import qualified Data.Vector                       as V hiding (replicateM)
+import           Debug.Trace
+import           System.Environment
+import           System.IO
+import           Text.ParserCombinators.Parsec
 -- import Control.Monad (replicateM)
-import qualified Control.Monad.Parallel as CMP
-import Immutable.Shuffle
-import qualified Data.Set as Set
-import qualified Data.Graph.Inductive.Graph as G
-import qualified Data.GraphViz as GV
+import qualified Control.Monad.Parallel            as CMP
+import qualified Data.Graph.Inductive.Graph        as G
 import qualified Data.Graph.Inductive.PatriciaTree as P
-import Data.GraphViz.Printing
-import qualified Data.Text.Lazy as T
-import qualified Data.Number.Transfinite as NT
-import qualified System.Random as Rand
-import qualified System.Random.Shuffle as RandS
-import System.IO.Unsafe
--- From matrices package (so 0 based)
--- import Data.Matrix as M
+import qualified Data.GraphViz                     as GV
+import           Data.GraphViz.Printing
+import qualified Data.Number.Transfinite           as NT
+import qualified Data.Set                          as Set
+import qualified Data.Text.Lazy                    as T
+import           Immutable.Shuffle
+import           System.IO.Unsafe
+import qualified System.Random                     as Rand
+import qualified System.Random.Shuffle             as RandS
 
 -- Local lower diag, boxed, immutable matrices
-import qualified SymMatrix as M
+import qualified SymMatrix                         as M
 
 
 type Vertex = Int
@@ -134,9 +133,6 @@ fst3 (d,_,_) = d
 snd3 :: (a,b,c) -> b
 snd3 (_,e,_) = e
 
-thd3 :: (a,b,c) -> c
-thd3 (_,_,f) = f
-
 fst4 :: (a,b,c,d) -> a
 fst4 (e,_,_,_) = e
 
@@ -164,7 +160,7 @@ orderTree (leaves, edges) =
   in
   (leaves, V.fromList edgeList)
 
--- | 
+-- |
 -- Map a function over a traversable structure in parallel
 -- Preferred over parMap which is limited to lists
 -- Add chunking (with arguement) (via chunkList) "fmap blah blah `using` parListChunk chunkSize rseq/rpar"
@@ -172,7 +168,7 @@ orderTree (leaves, edges) =
 parmap :: Traversable t => Strategy b -> (a->b) -> t a -> t b
 parmap strat f = withStrategy (parTraversable strat).fmap f
 
--- | seqParMap takes strategy,  if numThread == 1 retuns fmap otherwise parmap and 
+-- | seqParMap takes strategy,  if numThread == 1 retuns fmap otherwise parmap and
 seqParMap :: Traversable t => Strategy b -> (a -> b) -> t a -> t b
 seqParMap strat f =
   if getNumThreads > 1 then parmap strat f
@@ -319,7 +315,6 @@ wagBest distMatrix inTree leavesToAdd nOTUs newVertexIndex leavesToMap choiceOpt
   | V.null leavesToAdd = (inTree, leavesToAdd, distMatrix)
   | otherwise =
   let addPosVect = V.map (addTaxonToTree distMatrix inTree leavesToAdd newVertexIndex) leavesToMap
-    -- addPosVect = parmap rseq (addTaxonToTree distMatrix inTree leavesToAdd newVertexIndex) leavesToMap
       (firstLeafCost, _, _, _ ) = V.head addPosVect -- To initialize below
       (_, newTree, newLeavesToAdd, augmentedDistMatrix) = getBestLeafAdd (V.tail addPosVect) firstLeafCost (V.head addPosVect)
   in
@@ -330,7 +325,7 @@ wagBest distMatrix inTree leavesToAdd nOTUs newVertexIndex leavesToMap choiceOpt
 
 
 -- | calculateWagnerTrees takes an input distance matrix (and options later) and returns
--- a tree (V,E) discription of Wagner tree with labelled internal veritices and branch lengths 
+-- a tree (V,E) discription of Wagner tree with labelled internal veritices and branch lengths
 calculateWagnerTrees :: M.Matrix Double -> String -> (Tree, M.Matrix Double)
 calculateWagnerTrees distMatrix choiceOpt =
   if M.dim distMatrix == (0,0) then error "Null distance matrix"
@@ -410,13 +405,13 @@ getEdgesNonRoot edgeIndex edgeVect nOTUs leafNames =
               else "(" ++ uSubTree ++ ":" ++ showDouble precision weight ++ "," ++ eSubTree ++ ")"
 
       else getEdgesNonRoot edgeIndex remainderEdges nOTUs leafNames ++ ":" ++ showDouble precision weight ++ ","
-    --))
+
 
 -- | convertToNewick wrapper to remove double commas
 convertToNewick :: V.Vector String ->Int ->  Tree -> String
 convertToNewick leafNames outGroup wagTree = removeCrap $ convertToNewickGuts leafNames outGroup wagTree
 
--- | removeDoubleCommas removes second of double comas ",," -> "," 
+-- | removeDoubleCommas removes second of double comas ",," -> ","
 -- this a hack to fix problem in convertToNewick
 removeCrap :: String -> String
 removeCrap inString =
@@ -447,8 +442,6 @@ convertToNewickGuts leafNames outGroup wagTree =
   -- this is embarassing bullshit  -- converting  ",,"  to ","
   if firstVert == outGroup then "(" ++ (leafNames V.! outGroup)  ++ ":" ++ showDouble 8 (weight/2.0) ++ "," ++ getEdgesNonRoot secondVert remainderEdges (V.length leafNames) leafNames ++ ":" ++ showDouble 8 (weight/2.0) ++ ")"
   else "(" ++ (leafNames V.! outGroup)  ++ ":" ++ showDouble 8 (weight/2.0) ++ "," ++ getEdgesNonRoot firstVert remainderEdges (V.length leafNames) leafNames ++ ":" ++ showDouble 8 (weight/2.0) ++ ")"
-  --)
-    --"();"
 
 -- | getEdgeCost returns weight form edge tuple
 getEdgeCost :: (Vertex, Vertex, Weight) -> Double
@@ -485,7 +478,7 @@ getRandomAdditionSequence leafNames distMatrix outgroup initiaLeavesToAdd =
   (newickTree, fst thisTree, treeCost, snd thisTree)
 
 -- | doWagnerS takes user options and produces the Wagner tree methods desired (best, asis, or random)
--- outputs newick rep list 
+-- outputs newick rep list
 doWagnerS :: V.Vector String -> M.Matrix Double -> String -> Int -> String -> [V.Vector Int]-> [TreeWithData]
 doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSequences =
   let nOTUs = V.length leafNames
@@ -506,8 +499,8 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
       in
       [(newickTree, fst asIsResult, treeCost, snd asIsResult)]
   else if head addSequence == 'r' then
-      if (length replicateSequences) == 0 then error "Zero replicate additions specified--could be error in configuration file"
-      else 
+      if null replicateSequences then error "Zero replicate additions specified--could be error in configuration file"
+      else
         let (chunkSize, _) = quotRem (length replicateSequences) getNumThreads
             randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize myStrategy -- was rseq not sure whats better
             -- randomAddTrees = parmap rseq (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences
@@ -527,7 +520,7 @@ getRandomReps inString
 ranList :: Rand.StdGen -> Int -> Int -> [Int]
 ranList sg n maxValue = take n $ Rand.randomRs (0,maxValue) sg
 
--- | driver function to generate list of positive integers 
+-- | driver function to generate list of positive integers
 {-# NOINLINE betterRandomList #-}
 betterRandomList :: Int -> Int -> [Int]
 betterRandomList n maxValue= unsafePerformIO $ do
@@ -538,17 +531,6 @@ betterRandomList n maxValue= unsafePerformIO $ do
 {-# NOINLINE getNumThreads #-}
 getNumThreads :: Int
 getNumThreads = unsafePerformIO getNumCapabilities
-
-
--- | getRandAddVect takes list of sequence integers, randomizes and returns as vector
-{-# NOINLINE getRandAddVect #-}
-getRandAddVect :: [a] -> V.Vector a
-getRandAddVect inList =
-  let randIntList = betterRandomList (length inList) (length inList -1)
-  in
-  trace (show randIntList)
-  V.fromList $ RandS.shuffle inList randIntList
-
 
 -- getBestTrees takes newick and sorts on comment at end with cost
 getBestTrees :: String -> Int -> [TreeWithData] -> Double -> [TreeWithData] -> [TreeWithData]
@@ -582,14 +564,13 @@ getUniqueTrees inList uniqueList =
   else
     let firstTree = head inList
         fstNewick = fst4 firstTree
-        -- (firstTreeNewick, firstTreeTree) = firstTree
     in
-    if fstNewick `notElem` (fmap fst4 uniqueList) then getUniqueTrees (tail inList) (firstTree : uniqueList)
+    if fstNewick `notElem` fmap fst4 uniqueList then getUniqueTrees (tail inList) (firstTree : uniqueList)
     else getUniqueTrees (tail inList) uniqueList
 
 -- | keepTrees filters newick trees based on options
 -- all keep all
--- best shortest (and unique) allows number of max to save 
+-- best shortest (and unique) allows number of max to save
 -- unique unique  representations irespective of length
 -- keep metyhod for save first | last | atRandom if buffer full
 keepTrees :: [TreeWithData] -> String -> String -> Double -> [TreeWithData]
@@ -682,7 +663,7 @@ adjustInternalEdgeVertex inV hV lV maxOffSet nOTUs
 adjustVertex :: Edge -> Vertex -> Vertex -> Int -> Edge
 adjustVertex (inE, inU, w) hV lV nOTUs
   | (inE <= max lV nOTUs) && (inU <= max lV nOTUs) = (inE, inU, w)
-  | lV < nOTUs =  -- update pendant edge was deleted since hV > lV; hV must be > nOTUs   
+  | lV < nOTUs =  -- update pendant edge was deleted since hV > lV; hV must be > nOTUs
     if (inE > max hV nOTUs) && (inU > max hV nOTUs) then (inE - 1, inU - 1, w)
     else if (inE <= max hV nOTUs) && (inU > max hV nOTUs) then (inE, inU - 1, w)
     else if (inE > max hV nOTUs) && (inU <= max hV nOTUs) then (inE - 1, inU, w)
@@ -693,9 +674,9 @@ adjustVertex (inE, inU, w) hV lV nOTUs
     in
     (newE, newU, w)
 
--- | updateVertexNUmbersOnEdges taked vertex numbers and updates HTU indices to reflect 
--- the deletion of those vertices 
--- ASSUMES edges are ordered (a,b,weight) a > b 
+-- | updateVertexNUmbersOnEdges taked vertex numbers and updates HTU indices to reflect
+-- the deletion of those vertices
+-- ASSUMES edges are ordered (a,b,weight) a > b
 -- subtracts 2 from index if > the bigger of teh two, subtract 1 if bigger than lower,
 -- otherwise leaves unchanged
 updateVertexNUmbersOnEdges  :: Vertex -> Vertex -> V.Vector Edge -> Int -> V.Vector Edge
@@ -708,66 +689,20 @@ updateVertexNUmbersOnEdges eVert uVert edgeList nOTUs =
           newVertex = adjustVertex (V.head edgeList) hVert lVert nOTUs
       in
       V.cons newVertex (updateVertexNUmbersOnEdges eVert uVert (V.tail edgeList) nOTUs)
-     -- )
 
-{-
--- | updateRow updates row of distance matrix (shortens) based on deleteing two vertex entries
--- assume 1st is higher and second lower
-updateRow :: Vertex -> Vertex -> [Double] -> Int -> Int -> Int -> Edge -> Edge -> [Double]
-updateRow hVert lVert rowList nOTUs rowCounter columnCounter c1Edge c2Edge =
-  let (c1E, c1U, c1W) = c1Edge
-      (c2E, c2U, c2W) = c2Edge
-  in
-  if null rowList then []
-  else
-      if columnCounter < nOTUs then
-          if ((rowCounter == c1E) && (columnCounter == c1U)) || ((rowCounter == c1U) && (columnCounter == c1E)) then c1W : updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1) c1Edge c2Edge else (if ((rowCounter == c2E) && (columnCounter == c2U)) || ((rowCounter == c2U) && (columnCounter == c2E)) then c2W : updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1) c1Edge c2Edge else head rowList : updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1) c1Edge c2Edge)
-      else if (columnCounter == hVert) || (columnCounter == lVert) then updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1) c1Edge c2Edge
-      else
-          if ((rowCounter == c1E) && (columnCounter == c1U)) || ((rowCounter == c1U) && (columnCounter == c1E)) then c1W : updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1) c1Edge c2Edge else (if ((rowCounter == c2E) && (columnCounter == c2U)) || ((rowCounter == c2U) && (columnCounter == c2E)) then c2W : updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1) c1Edge c2Edge else head rowList : updateRow hVert lVert (tail rowList) nOTUs rowCounter (columnCounter + 1)  c1Edge c2Edge)
-
-
--- | makeNewRows updates rows recursively based on deleting rows and columns in hVert (greater)  and lVert (lesser)
-makeNewRows :: Vertex -> Vertex -> [[Double]]  -> Int -> Int -> Edge -> Edge -> [[Double]]
-makeNewRows hVert lVert distListList nOTUs rowCounter c1Edge c2Edge
-  | null distListList = []
-  | rowCounter < nOTUs =
-  let firstRow = head distListList
-      newRow = updateRow hVert lVert firstRow nOTUs rowCounter 0 c1Edge c2Edge
-  in
-  newRow : makeNewRows hVert lVert (tail distListList) nOTUs (rowCounter + 1) c1Edge c2Edge
-  | (rowCounter == hVert) || (rowCounter == lVert) = makeNewRows hVert lVert (tail distListList) nOTUs (rowCounter + 1) c1Edge c2Edge
-  | otherwise =
-  let firstRow = head distListList
-      newRow = updateRow hVert lVert firstRow nOTUs rowCounter 0 c1Edge c2Edge
-  in
-  newRow : makeNewRows hVert lVert (tail distListList) nOTUs (rowCounter + 1) c1Edge c2Edge
-
-
--- | updateDistMatrix updates distance matrix to remove eVertex and uVertex columns and rows as in updateVertexNUmbersOnEdges
---  update costs for two contracte edges c1Edge and c2Edge
-updateDistMatrix :: Vertex -> Vertex ->  M.Matrix Double -> Int -> Edge -> Edge -> M.Matrix Double
-updateDistMatrix eVert uVert distMatrix nOTUs c1Edge c2Edge =
-  let hVert = max eVert uVert
-      lVert = min eVert uVert
-      distListList = M.toLists distMatrix
-  in
-  M.fromLists $ makeNewRows hVert lVert distListList nOTUs 0 c1Edge c2Edge
--}
 
 -- | updateDistMatrix updates distance matrix to remove eVertex and uVertex columns and rows as in updateVertexNUmbersOnEdges
 -- update costs for two contracte edges c1Edge and c2Edge
 -- the distance update takes place first and row/coumn removal second
--- this to keep the proper indices (since the non-deleted rows and columns indices are changed) 
+-- this to keep the proper indices (since the non-deleted rows and columns indices are changed)
 updateDistMatrix :: Vertex -> Vertex ->  M.Matrix Double -> Int -> Edge -> Edge -> M.Matrix Double
 updateDistMatrix eVert uVert distMatrix nOTUs c1Edge c2Edge =
   let validEdgeList = filter ((>= 0).fst3) [c1Edge, c2Edge]
       newMatrix = M.unsafeUpdateMatrix distMatrix validEdgeList
       newMatrix' = M.deleteRowsAndColumns newMatrix (filter (> (nOTUs - 1)) [eVert, uVert])
   in
-  -- trace (M.showMatrixNicely newMatrix') 
   newMatrix'
-  
+
 
 
 -- | getEndVertices takes a pair of edges and returns the non-index vertices
@@ -789,7 +724,7 @@ getEndVertices inEdges index =
           (fEVertex, sEVertex)
     else error ("Error findeing ends of " ++ show (V.head inEdges) ++ " and " ++ show (V.last inEdges))
 
--- | getContractedWeight gets edge contractd edge weights ither form distMatrix for  OTUs or 1 OTU and 1 
+-- | getContractedWeight gets edge contractd edge weights ither form distMatrix for  OTUs or 1 OTU and 1
 -- internal wertex or by 4 point metric (maximum of two estimations)
 getContractedWeight :: Vertex -> Vertex -> M.Matrix Double -> Int -> V.Vector Edge -> Double
 getContractedWeight aVert bVert distMatrix nOTUs edgeVect
@@ -798,7 +733,7 @@ getContractedWeight aVert bVert distMatrix nOTUs edgeVect
   | bVert < nOTUs = distMatrix M.! (aVert, bVert)
   | otherwise =
   -- both internal 4-point mertic estimation
-  --get edges connected to the contracted edge
+  -- get edges connected to the contracted edge
   let aEdgeVect = getSubEdges [aVert] nOTUs edgeVect V.empty "first2"
       bEdgeVect = getSubEdges [bVert] nOTUs edgeVect V.empty "first2"
       (a,b) = getEndVertices aEdgeVect aVert
@@ -839,25 +774,17 @@ getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVert
 
 -- | getNewDistMatrix takes distMatrix and adds Cost for new eVertLeafDist uVertLeafDist
 -- created in build process (new HTUs)
--- should be complete (on input) for leaves already added (initail paiwise distances and HTUs added) 
+-- should be complete (on input) for leaves already added (initail paiwise distances and HTUs added)
 -- adds a single new row (minus last 0.0 as new row at end) which is appended
 getNewDistMatrix :: M.Matrix Double -> Double -> Double -> Double -> Int -> Int -> Int -> M.Matrix Double
 getNewDistMatrix origDist addCost eVertLeafDist uVertLeafDist eVertex uVertex leafIndex =
     let columnHolder = V.fromList [0..(M.rows origDist - 1)] -- List of HTU and OTU indices in pairwise dist matrix
         newDistRow = V.map (getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVertex) columnHolder
-        newDistRow' = newDistRow `V.snoc` (0.0 :: Double) 
+        newDistRow' = newDistRow `V.snoc` (0.0 :: Double)
     in
     M.addMatrixRow origDist newDistRow'
-    {-
-    --This is a waste--change structure
-    let oldRows = V.fromList (M.toRows origDist)
-        newRows = addNewColumn oldRows newDistRow newDistRow
-    in
-    M.fromRows (V.toList newRows)
-    --)
-    -}
 
--- | enterNewEdgeCost cretes new row of costs from edge vectors 
+-- | enterNewEdgeCost cretes new row of costs from edge vectors
 -- infty NT.infinity if not there
 -- this makes update n^2 which is dumb
 enterNewEdgeCost :: Int -> V.Vector Edge -> Int -> Double
@@ -878,22 +805,10 @@ getNewDistMatrixInternal inMatrix newEdgeVect =
   else
     let numIn = M.rows inMatrix
         columnHolder = [0..(numIn - 1)]
-        -- newDistColumnI = fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder ++ [0.0, enterNewEdgeCost numIn newEdgeVect (numIn + 1)]
-        -- newDistColumnII = fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
-        newDistColumnI = (fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder) ++ [0.0]
-        newDistColumnII = (fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder) ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
-        {-
-        --This is a waste--change structure
-        oldRows = M.toLists inMatrix
-        newRows = addTwoColumns oldRows newDistColumnII newDistColumnII
-        newLists = newRows ++ [newDistColumnI, newDistColumnII]
-        -}
+        newDistColumnI = fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder ++ [0.0]
+        newDistColumnII = fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
     in
     M.addMatrices inMatrix  (V.fromList [V.fromList newDistColumnI, V.fromList newDistColumnII])
-    {-
-    M.fromLists newLists
-    -- )
-    -}
 
 -- | connectEdges takes two vectors of edges and adds and edge between the two in edgesToConnect
 -- this deletes the two old edges from the edge Vectors and creates a new tree with the five new edges
@@ -906,7 +821,7 @@ connectEdges distMatrix eEdges uEdges edgesToConnect
   | otherwise =
   let edgesKept = subtractVector edgesToConnect eEdges V.++ subtractVector edgesToConnect uEdges
       numInTree = M.rows distMatrix
-      -- order new edges 
+      -- order new edges
       (a, b, wAB) = V.head edgesToConnect
       (c, d, wCD) = V.last edgesToConnect
       firstEstimate  = (distMatrix M.! (a,c)) + (distMatrix M.! (b,d)) - (distMatrix M.! (a,b)) - (distMatrix M.! (c,d))
@@ -951,53 +866,6 @@ getVertexSet edgeVect =
       in
       Set.union thisSet (getVertexSet $ V.tail edgeVect)
 
--- | edgeHasVertexBool uses edgeHasVertex but returns True if found, False if not
-edgeHasVertexBool :: Vertex -> Edge -> Bool
-edgeHasVertexBool inVertex inEdge =
-  isJust (edgeHasVertex inVertex inEdge)
-
--- | checkDegreeVerts checks degree if each vertex by number of edges containing that number in edgeVect
--- if < nOTUS then should be 1 otherwise 3
-checkDegreeVerts :: Int -> Int -> V.Vector Edge -> String -> Int -> Bool
-checkDegreeVerts nOTUs curVertex edgeVect whereString adjustment  =
-  if curVertex == (2 * nOTUs) - 2 - adjustment then trace whereString True
-  else
-    let vertDegree = V.length $ V.findIndices (edgeHasVertexBool curVertex) edgeVect
-    in
-    if curVertex < nOTUs then -- leaf
-      if vertDegree /= 1 then error (whereString ++ " Vertex " ++ show curVertex ++ " has degreee " ++ show vertDegree ++ " and should have 1 in edge set " ++ show edgeVect)
-      else checkDegreeVerts nOTUs (curVertex + 1) edgeVect whereString adjustment
-    else
-      if vertDegree /= 3 then error (whereString ++ "Vertex " ++ show curVertex ++ " has degreee " ++ show vertDegree ++ " and should have 3 in edge set " ++ show edgeVect)
-      else checkDegreeVerts nOTUs (curVertex + 1) edgeVect whereString adjustment
-
--- | isProperTree takes a set of edges and checks for connectedness (3 for each non-OTU vertex edge, 1 for each vertex) 
--- not yet checking for reaching all OTUs and HTUs (connected)
--- Does NOT check for vertex set; only an edge check
-isProperTree :: Tree -> Int -> Bool
-isProperTree inTree matDim =
-  let (_, edgeVect) = inTree
-      totalVerts = matDim
-      nOTUs = (matDim + 2) `div` 2
-      totalEdges = (2 * nOTUs) - 3
-      vertexSet = getVertexSet edgeVect
-  in
-  if totalEdges /= V.length edgeVect then error ("Matrix implies " ++ show totalEdges ++ " edges " ++ " but there are " ++ show (V.length edgeVect))
-  else if Set.size vertexSet /= totalVerts then error ("Matrix implies " ++ show totalVerts ++ " vertices " ++ " but there are " ++ show (Set.size vertexSet))
-  else
-      let terminalVertSet = Set.filter (< nOTUs) vertexSet
-      in
-      if Set.size terminalVertSet /= nOTUs then error ("Matrix implies " ++ show nOTUs ++ " OTUs " ++ " but there are " ++ show (Set.size terminalVertSet) ++ "vertex indices < nOTUs")
-      else checkDegreeVerts nOTUs 0 edgeVect "Full check" 0 || error "Error in degree of vertices"
-
--- | debug dummy edge
-getDummyVertex :: Int -> Int -> Int -> Int
-getDummyVertex eV uV nOTUs =
-    let first = min  eV uV
-    in
-    if first < nOTUs then first
-    else (-1)
-
 -- | splitTree takes a tree description and its edgeList and return pairs of edge list
 -- split at input edge in tree with "repaird"/contracted edges, delta, and original
 -- edge (pairs of vertices and weight) for each split
@@ -1007,13 +875,13 @@ splitTree distMatrix inTree inTreeCost edgeToRemove =
   let (_, edgeVect) = inTree
       (eVertex, uVertex, _) = edgeToRemove
 
-      -- newEdgeSet = subtractVector (V.cons edgeToRemove $ eEdges V.++ uEdges) edgeVect   
+      -- newEdgeSet = subtractVector (V.cons edgeToRemove $ eEdges V.++ uEdges) edgeVect
       newEdgeSet = V.filter (/= edgeToRemove) edgeVect
       nOTUs = div (3 + V.length edgeVect) 2
       eSubEdges = getSubEdges [eVertex] nOTUs newEdgeSet V.empty "all"
       uSubEdges = getSubEdges [uVertex] nOTUs newEdgeSet V.empty "all"
 
-      -- get edges that need to be contracted and re-estimate weights 
+      -- get edges that need to be contracted and re-estimate weights
       eEdges = getSubEdges [eVertex] nOTUs eSubEdges V.empty "first2"
       uEdges = getSubEdges [uVertex] nOTUs uSubEdges V.empty "first2"
       eMergedEdge = contractEdges distMatrix nOTUs eEdges eVertex edgeVect
@@ -1034,7 +902,7 @@ splitTree distMatrix inTree inTreeCost edgeToRemove =
       previousEdges'' = updateVertexNUmbersOnEdges eVertex uVertex (V.map orderEdge previousEdges) nOTUs
 
       -- Update with deleted node and reestimated contracted edges
-      -- update matrix the costs (2 ij x 2 ji) of contracted edges 
+      -- update matrix the costs (2 ij x 2 ji) of contracted edges
       distMatrix'' = updateDistMatrix eVertex uVertex distMatrix nOTUs eMergedEdge uMergedEdge -- (V.head previousEdges'') (V.last previousEdges'')
 
       -- Delta calcualted by differene in original tree cost and split and readdition to split edges (then tail splits later
@@ -1074,7 +942,7 @@ sieveTrees inDelta curBestCost inAddList leafNames outgroup savedTrees =
 
 
 -- | reAddTerminals checks to see if split on pendant edge--if so reads terminal to each edge but saves equal cost if found
--- and saveMethod specifies it.  Idenitical to the wagner addition process with saveing equal as option 
+-- and saveMethod specifies it.  Idenitical to the wagner addition process with saveing equal as option
 -- could use addEdgeToSplit for consistancey with SPR/TBR
 reAddTerminals :: String -> Double -> V.Vector String -> Int -> SplitTreeData -> [TreeWithData]
 reAddTerminals rejoinType curBestCost leafNames outGroup split =
@@ -1087,7 +955,7 @@ reAddTerminals rejoinType curBestCost leafNames outGroup split =
     else (if M.rows distMatrix /= ((2 * nOTUs) - 3) then error ("Dist Matrix incorrect size " ++ show (M.dim distMatrix) ++ " should be " ++ show ((2 * nOTUs) - 3, (2 * nOTUs) - 3))
     else
       let newLeafIndex = M.rows distMatrix
-      -- take tail of uEdgeVect so not regerate input tree 
+      -- take tail of uEdgeVect so not regerate input tree
           additionList = V.map (addToEdgeSwap distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex) uEdgeVect -- (V.tail uEdgeVect) -- tail so not hit original tree, leave all to reestimate if necesary
           minAdditionCost = V.minimum (V.map fst3 additionList)
       in
@@ -1100,7 +968,7 @@ reAddTerminals rejoinType curBestCost leafNames outGroup split =
 addToEdgeSwapRecurse :: Double -> M.Matrix Double -> Int -> Tree -> Int -> V.Vector Edge -> (Double, Tree, M.Matrix Double)
 addToEdgeSwapRecurse inDelta distMatrix leaf initialTree newLeafIndex inEdgeVect =
   if V.null inEdgeVect then (inDelta, initialTree, distMatrix)
-  else 
+  else
     let inEdge@(eVertex, uVertex, inWeight) = V.head inEdgeVect
         (initialVertexVect, initialEdgeVect) = initialTree
         addCost = ((distMatrix M.! (leaf, eVertex)) + (distMatrix M.! (leaf, uVertex)) - (distMatrix M.! (eVertex, uVertex))) / 2.0
@@ -1115,7 +983,7 @@ addToEdgeSwapRecurse inDelta distMatrix leaf initialTree newLeafIndex inEdgeVect
         augmentedDistMatrix = getNewDistMatrix distMatrix addCost eVertLeafDist uVertLeafDist eVertex uVertex leaf
         newDelta = addCost + eVertLeafDist + uVertLeafDist - inWeight
     in
-    if (newDelta < inDelta) then (newDelta, newTree, augmentedDistMatrix)
+    if newDelta < inDelta then (newDelta, newTree, augmentedDistMatrix)
     else addToEdgeSwapRecurse inDelta distMatrix leaf initialTree newLeafIndex (V.tail inEdgeVect)
 
 -- | getVectorAllVectorPairs takes two vectors and creates a vector of avector of two elements each for each
@@ -1129,7 +997,7 @@ getVectorAllVectorPairs firstVect secondVect =
     in
     firstPairs V.++ getVectorAllVectorPairs (V.tail firstVect) secondVect
 
--- | createVectorEdgePairs creates teh Vector of Vectors of edges (2 in each case) to connect 
+-- | createVectorEdgePairs creates teh Vector of Vectors of edges (2 in each case) to connect
 -- if SPR then takes the initial (previous e edge) and pairs with all in u edge vect
 -- if TBR then all conbinations of pairs
 createVectorEdgePairs :: String -> V.Vector Edge -> V.Vector Edge -> V.Vector Edge -> V.Vector (V.Vector Edge)
@@ -1146,25 +1014,25 @@ createVectorEdgePairs pairSet previousEdges eEdgeVect uEdgeVect
 addEdgeToSplitRecurse :: V.Vector Edge -> V.Vector Edge -> Edge -> Edge -> M.Matrix Double -> V.Vector (V.Vector Edge) -> (Double, Tree, M.Matrix Double) -> (Double, Tree, M.Matrix Double)
 addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix edgesToConnectVect origTriple@(inDelta, _, _) =
   if V.null edgesToConnectVect then origTriple
-  else 
+  else
     let edgesToConnect = V.head edgesToConnectVect
     in
     if V.null eEdges &&  V.null uEdges then error "Empty e/u Edge vectors in addEdgeToSplit"
     else if V.null edgesToConnect then error "Empty eEdge vector in addEdgeToSplit"
     else if fst3 (V.head eEdges) == (-1) then -- adding eOTU, V.last since the (-1,-1,0) edge should always be first
       let (newDelta, newTree, newMatrix) = addToEdgeSwap distMatrix (fst3 eTerminal) (V.empty, uEdges) (M.rows distMatrix) (V.last edgesToConnect)
-      in 
-      if (newDelta < inDelta) then (newDelta, newTree, newMatrix)
+      in
+      if newDelta < inDelta then (newDelta, newTree, newMatrix)
       else addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix (V.tail edgesToConnectVect) origTriple
     else if fst3 (V.head uEdges) == (-1) then -- adding uOTU
       let (newDelta, newTree, newMatrix) = addToEdgeSwap distMatrix (fst3 uTerminal) (V.empty, eEdges) (M.rows distMatrix) (V.last edgesToConnect)
-      in 
-      if (newDelta < inDelta) then (newDelta, newTree, newMatrix)
+      in
+      if newDelta < inDelta then (newDelta, newTree, newMatrix)
       else addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix (V.tail edgesToConnectVect) origTriple
     else -- both internal edges
       let (newDelta, newTree, newMatrix) = connectEdges distMatrix eEdges uEdges edgesToConnect
-      in 
-      if (newDelta < inDelta) then (newDelta, newTree, newMatrix)
+      in
+      if newDelta < inDelta then (newDelta, newTree, newMatrix)
       else addEdgeToSplitRecurse eEdges uEdges eTerminal uTerminal distMatrix (V.tail edgesToConnectVect) origTriple
 
 
@@ -1214,7 +1082,7 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
             newCost = curBestCost - delta + newDelta
             newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
         in
-        if (newCost < curBestCost) then (newickTree, newTree, newCost, newMatrix)
+        if newCost < curBestCost then (newickTree, newTree, newCost, newMatrix)
         else origTree
       else -- internal edge or edge with two OTUs as vertices
           -- check to make sure edges are where they should be can remove later
@@ -1227,11 +1095,11 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
               newCost = curBestCost - delta + newDelta
               newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
           in
-          if (newCost < curBestCost) then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
+          if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
           else origTree
 
 
--- | reAddTerminalsSteep like readdTerminals but only returns one tree keeping better 
+-- | reAddTerminalsSteep like readdTerminals but only returns one tree keeping better
 reAddTerminalsSteep :: String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData
 reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
   if rejoinType /= "otu" then error ("Incorrect swap function in reAddTerminals: " ++ rejoinType)
@@ -1248,13 +1116,13 @@ reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
           newCost = curBestCost - delta + newDelta
           newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
       in
-      if (newCost < curBestCost) then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
+      if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
       else origTree
 
 
 
 -- | filterNewTreesOnCost returns list of all unique new best cost trees from list
--- assumes curBestCost = cost of sabed trees 
+-- assumes curBestCost = cost of sabed trees
 filterNewTreesOnCost :: Double -> [TreeWithData] -> [TreeWithData] -> [TreeWithData]
 filterNewTreesOnCost curBestCost firstTreeList savedTrees =
   if null firstTreeList then savedTrees
@@ -1270,7 +1138,7 @@ filterNewTreesOnCost curBestCost firstTreeList savedTrees =
           if isNothing uniqueTree then filterNewTreesOnCost curBestCost (tail firstTreeList) savedTrees
           else filterNewTreesOnCost curBestCost (tail firstTreeList) (fromJust uniqueTree : savedTrees )
 
--- | filterNewTrees takes the first tree and checks if in the second list 
+-- | filterNewTrees takes the first tree and checks if in the second list
 filterNewTrees :: [TreeWithData] -> TreeWithData -> Maybe TreeWithData
 filterNewTrees secondTreeList firstTree =
   if null secondTreeList then Just firstTree
@@ -1287,12 +1155,12 @@ getSaveNumber inString =
   if length inString == 4 then maxBound :: Int
   else (read $ drop 5 inString) :: Int
 
--- | splitJoin does both split and rejoin operations in a fashion that if a better (shorter) tree is found is shortcircuits and 
+-- | splitJoin does both split and rejoin operations in a fashion that if a better (shorter) tree is found is shortcircuits and
 -- begins again on the new tree, else proceeds untill all splits and joins are completed, but only on a single tree
 splitJoin :: (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> String -> V.Vector String -> Int -> V.Vector Edge -> TreeWithData -> TreeWithData
-splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData@(_, curTree, curTreeCost, curTreeMatrix) = 
+splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData@(_, curTree, curTreeCost, curTreeMatrix) =
   if V.null edgeVect then curTreeWithData -- All splits tested, nothing better found
-  else 
+  else
     let firstEdge = V.head edgeVect
         firstSplit = splitTree curTreeMatrix curTree curTreeCost firstEdge
         !firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
@@ -1307,9 +1175,9 @@ splitJoinWrapper :: (String -> Double -> V.Vector String -> Int -> SplitTreeData
 splitJoinWrapper swapFunction refineType leafNames outGroup curTreeWithData@(_, curTree, _, _) =
     let edgeVect = snd curTree
     in
-    splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData 
+    splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData
 
--- | getGeneralSwapSteepestOne performs refinement as in getGeneralSwap but saves on a single tree (per split/swap) and 
+-- | getGeneralSwapSteepestOne performs refinement as in getGeneralSwap but saves on a single tree (per split/swap) and
 -- immediately accepts a Better (shorter) tree and resumes the search on that new tree
 -- relies heavily on laziness of splitTree so not parallel at this level
 getGeneralSwapSteepestOne :: String -> (String -> Double -> V.Vector String -> Int -> SplitTreeData -> TreeWithData -> TreeWithData) -> V.Vector String -> Int -> [TreeWithData] -> [TreeWithData] -> [TreeWithData]
@@ -1318,16 +1186,10 @@ getGeneralSwapSteepestOne refineType swapFunction leafNames outGroup inTreeList 
   else
       trace ("In "++ refineType ++ " Swap (steepest) with " ++ show (length inTreeList) ++ " trees with minimum length " ++ show (minimum $ fmap thd4 inTreeList)) (
       let steepTreeList = seqParMap myStrategy (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
-          steepCost = minimum $ fmap thd4 steepTreeList 
+          steepCost = minimum $ fmap thd4 steepTreeList
       in
       --this to maintina the trajectories untill final swap--otherwise could converge down to single tree prematurely
       keepTrees steepTreeList "unique" "first" steepCost
-      {-
-      -- saving equal here so can be sent on to full equal tree refine later if nothing better is found
-      if steepCost < overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) [steepTree]
-      else if steepCost == overallBestCost then getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) (steepTree : savedTrees)
-      else getGeneralSwapSteepestOne refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) savedTrees
-      -}
       )
 
 -- | getGeneralSwap performs a "re-add" of terminal identical to wagner build addition to available edges
@@ -1344,16 +1206,11 @@ getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup 
       let curFullTree = head inTreeList
           overallBestCost = minimum $ fmap thd4 savedTrees
           (_, curTree, curTreeCost, curTreeMatrix) = curFullTree
-          -- parallelize here 
-          -- splitTreeList = fmap (splitTree curTreeMatrix curTree curTreeCost) (snd curTree) -- `using` parListChunk chunkSize rdeepseq
+          -- parallelize here
           splitTreeList = seqParMap myStrategy (splitTree curTreeMatrix curTree curTreeCost) (snd curTree)
-          -- (chunkSize, _) = quotRem (length splitTreeList) getNumThreads
-          -- firstTreeList = fmap (swapFunction refineType curTreeCost leafNames outGroup nOTUs) splitTreeList  `using` parListChunk chunkSize rdeepseq
           firstTreeList = seqParMap myStrategy (swapFunction refineType curTreeCost leafNames outGroup) splitTreeList
-          -- firstTreeList = V.map (reAddTerminals curBestCost leafNames outGroup nOTUs) splitTreeList
           firstTreeList' = filterNewTreesOnCost overallBestCost  (curFullTree : concat (V.toList firstTreeList)) savedTrees -- keepTrees (concat $ V.toList firstTreeList) saveMethod overallBestCost
       in
-      -- trace (show splitTreeList) (
       -- Work around for negative NT.infinity tree costs (could be dst matrix issue)
       if NT.isInfinite curTreeCost || null firstTreeList' then getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) savedTrees else (
    let (_, _, costOfFoundTrees, _) = head firstTreeList'
@@ -1410,7 +1267,7 @@ performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
   | otherwise = error ("Unrecognized refinement method: " ++ refinement)
 
 -- | makeVertexNames takes vertgex indices and returns leaf name if < nOTUs and "HTU" ++ show Index
--- if not 
+-- if not
 makeVertexNames :: [Vertex] -> Int -> V.Vector String -> [String]
 makeVertexNames vertList nOTUs leafNames =
   if null vertList then []
@@ -1476,17 +1333,6 @@ convertToDirectedGraph leafList outgroupIndex inTree =
       edgeList = V.toList $ directEdges outgroupIndex nOTUs True edgeVect
   in
   G.mkGraph labelledVertexList edgeList
-
--- | showGraph a semi-formatted show for Graphs
--- showGraph :: P.Gr String Double ->  String
-showGraph :: (Show a, Show b) => P.Gr a b -> String
-showGraph inGraph =
-  if G.isEmpty inGraph then "Empty Graph"
-  else
-      let nodeString = show $ G.labNodes inGraph
-          edgeString  = show $ G.labEdges inGraph
-      in
-      ("Nodes:" ++ nodeString ++ "\n" ++ "Edges: " ++ edgeString)
 
 -- | writeFiles takes a stub and list of strings
 -- and writes to files usinf stub ++ number as naming convention
@@ -1661,7 +1507,6 @@ main =
     let keepMethod =  paramList !! 9
     let exludedTaxaFileName =  paramList !! 10 -- remove quotes
 
-    -- Prelude.mapM_ (hPutStrLn stderr) args
     csvResult <- parseFromFile csvFile dataFile
     let rawDataInit = case csvResult of
                       Left err -> error $ "Error parsing " ++ dataFile ++ " " ++ show err
@@ -1712,7 +1557,7 @@ main =
 
     let !refinedTrees = concat $ seqParMap myStrategy (performRefinement refinement saveMethod keepMethod leafNames outElem) filteredTrees
 
-    --finale keep 
+    --finale keep
     let finalTrees = keepTrees refinedTrees saveMethod keepMethod NT.infinity
 
     hPutStrLn stderr ("After refinement, there are " ++ show (length finalTrees) ++ " saved trees at cost " ++ show (thd4 $ head finalTrees))
@@ -1722,18 +1567,17 @@ main =
     writeFile outputTreeFile (unlines (fmap fst4 finalTrees))
 
     -- Output "dot" for graphviz
-      -- Convert to Graph (fgl) format 
+      -- Convert to Graph (fgl) format
     let graphList = fmap (convertToDirectedGraph leafNames outElem . snd4) finalTrees
 
       -- Convert to Dot format
     let dotList = fmap (GV.graphToDot GV.quickParams) graphList
 
-      -- Output Dot 
+      -- Output Dot
     let dotStringList = fmap ((T.unpack . renderDot) . toDot) dotList
 
 
     writeFiles stub "dot" 0 dotStringList
-    -- writeFiles (reverse $ tail $ dropWhile (/= '.') (reverse dataFile)) "dot" 0 dotStringList
 
     hPutStrLn stderr "Done"
 
