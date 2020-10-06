@@ -81,7 +81,6 @@ import qualified SymMatrix                         as M
 import           DistanceMethods
 import           Types
 import           Utilities
---import           Wagner
 
 
 -- | makeVertexNames takes vertgex indices and returns leaf name if < nOTUs and "HTU" ++ show Index
@@ -384,7 +383,7 @@ main =
     hPutStrLn stderr ("After build, there are " ++ show (length filteredTrees) ++ " saved trees at cost " ++ show (minimum $ fmap thd4 filteredTrees))
 
 
-    let !refinedTrees = concat $ seqParMap myStrategy (performRefinement refinement saveMethod keepMethod leafNames outElem) filteredTrees
+    let !refinedTrees = concat $ seqParMap myStrategy (performWagnerRefinement refinement saveMethod keepMethod leafNames outElem) filteredTrees
 
     --final keep
     let finalTrees = keepTrees refinedTrees saveMethod keepMethod NT.infinity
