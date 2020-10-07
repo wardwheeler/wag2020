@@ -45,12 +45,6 @@ import           Types
 import           Utilities
 import qualified Wagner                            as W
 
--- | neighborJoining takes a list of leaves and a distance matrixx and returns 
--- an NJ tree
-neighborJoining :: V.Vector String -> M.Matrix Double -> String -> TreeWithData
-neighborJoining leafNames distMatrix outgroup =
-  emptyTreeWithData
-
 -- | uPGMA takes a list of leaves and a distance matrixx and returns 
 -- an UGPGMA tree
 uPGMA :: V.Vector String -> M.Matrix Double -> String -> TreeWithData
@@ -72,3 +66,69 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
 performWagnerRefinement :: String -> String -> String -> V.Vector String -> Int -> TreeWithData -> [TreeWithData]
 performWagnerRefinement refinement saveMethod keepMethod leafNames outGroup inTree = 
   W.performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
+
+-- | neighborJoining takes a list of leaves and a distance matrixx and returns 
+-- an NJ tree
+neighborJoining :: V.Vector String -> M.Matrix Double -> String -> TreeWithData
+neighborJoining leafNames distMatrix outgroup =
+  emptyTreeWithData
+
+-- | makeInitialDMatrix makes adjusted matrix (D) from observed (d) values
+-- assumes matrix is square and symmetrical
+makeInitialDMatrix :: M.Matrix Double -> Int -> Int -> [(Int, Int, Double)]-> M.Matrix Double
+makeInitialDMatrix inObsMatrix row column updateList =
+    if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
+    else if row == M.rows inObsMatrix then M.updateMatrix inObsMatrix updateList
+    else if column == M.cols inObsMatrix then makeInitialDMatrix inObsMatrix (row + 1) column updateList
+    else 
+        let dij = inObsMatrix M.! (row, column)
+            divisor = (1.0 / ((fromIntegral $ M.rows inObsMatrix) - 2))
+            ri  = ((sum $ M.getFullRow inObsMatrix row) - dij) / divisor
+            rj  = ((sum $ M.getFullRow inObsMatrix column) - dij) / divisor
+            bigDij = dij - (ri + rj)
+            newUpdateList = (row, column, bigDij) : updateList
+        in
+        makeInitialDMatrix inObsMatrix row (column + 1) newUpdateList
+
+-- | pickNearestUpdateMatrix takes d and D matrices, pickes nearest based on D
+-- then updates d and D to reflect new node and distances created
+-- updates teh column/row for vertices that are joined to be infinity so
+-- won't be chosen to join again
+pickNearestUpdateMatrix :: M.Matrix Double -> M.Matrix Double -> (M.Matrix Double, M.Matrix Double, Vertex, Edge, Edge)
+pickNearestUpdateMatrix littleDMatrix bigDMatrix =
+	if M.null littleDMatrix then error "Null d matrix in pickNearestUpdateMatrix"
+	else M.null bigDMatrix then error "Null D matrix in pickNearestUpdateMatrix"
+	else
+		let (iMin, jMin, distIJ) = getMatrixMinPair bigDMatrix (-1, -1, NT.infinity) 0 0
+		in
+		if distIJ == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
+		else
+			let newVertIndex = M.rows littleDMatrix
+				dij = littleDMatrix M.! (row, column)
+				bottom = (fromIntegral $ M.rows littleDMatrix) - 2
+            	divisor = 1.0 / bottom
+            	ri  = ((sum $ M.getFullRow littleDMatrix row) - dij) / divisor
+            	rj  = ((sum $ M.getFullRow littleDMatrix column) - dij) / divisor
+				diMinNewVert = (dij / 2.0) - ((ri - rj) / (2.0 * bottom))
+				djMinNewVert = dij - diMinNewVert
+
+				-- get distances to existing vertices
+				vertDistList = replicate (M.rows littleDMatrix) newVertIndex
+				otherVertList = [0..(M.rows littleDMatrix)]
+				pairVertList = (zip vertDistList otherVertList) ++ [(newVertIndex,newVertIndex)]
+				newLittleDRow = fmap getNewDist pairVertList
+				newLittleDMatrix = M.addMatrixRow littleDMatrix newLittleDMatrix
+				newBigDRow = fmap (makeBigDRow newLittleDMatrix) pairVertList
+
+				-- change D valeus to INFTY so won'e be chosen as pairs
+				iIFTYList = zip3 (replicate (M.rows newLittleDMatrix) iMin) [0..(M.rows newLittleDMatrix)] (replicate (M.rows newLittleDMatrix) NT.infinity)
+				jIFTYList = zip3 (replicate (M.rows newLittleDMatrix) jMin) [0..(M.rows newLittleDMatrix)] (replicate (M.rows newLittleDMatrix) NT.infinity)
+				newBigDMatrix = M.updateMatrix (M.addMatrixRow bigDMatrix newBigDRow) (iIFTYList ++ jIFTYList)
+
+				-- create new edges
+				newEdgeI = (newVertIndex, iMin, diMinNewVert)
+				newEdgeJ = (newVertIndex, jMin,djMinNewVert)
+			in
+			(newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ)
+
+

@@ -81,7 +81,7 @@ null inMatrix = inMatrix == empty
 -- | isSymmetric is true by defineition--when creted error if not
 isSymmetric :: (Eq a) => Matrix a -> Bool
 isSymmetric inM =
-    not (SymMatrix.null inM) || error "Nulll martix in isSymmetric"
+    not (SymMatrix.null inM) || error "Null matrix in isSymmetric"
 
 -- | fromRows creates a lower diagonal matrix (with diagonal)
 fromRows :: (Eq a, Show a) => [V.Vector a] -> Matrix a

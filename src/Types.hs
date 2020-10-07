@@ -50,7 +50,7 @@ type SplitTreeData = (V.Vector Edge,V.Vector Edge, Double, V.Vector Edge, M.Matr
 
 -- | emptyTreeWithData
 emptyTreeWithData :: TreeWithData
-emptyTreeWithData = ("", (V.empty, V.empty), 0.0, M.empty)
+emptyTreeWithData = ("()[];", (V.empty, V.empty), 0.0, M.empty)
 
 -- | used for comparing tree costs that are Double
 epsilon :: Double

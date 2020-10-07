@@ -52,37 +52,6 @@ getTreeCost :: Tree -> Double
 getTreeCost inTree =
   V.sum $ V.map getEdgeCost $ snd inTree
 
--- | getMatrixMinPair takes distMatrix initla pinteger pair and value
--- traverses teh matrix and return minimum distance and index pair
--- if tie takes first
-getMatrixMinPair :: M.Matrix Double ->  (Int, Int, Double) -> Int -> Int -> (Int, Int, Double)
-getMatrixMinPair distMatrix curBest curRow curColumn
-  | curRow == M.rows distMatrix = curBest
-  | curColumn == M.cols distMatrix = getMatrixMinPair distMatrix curBest (curRow + 1) 0
-  | curColumn == curRow = getMatrixMinPair distMatrix curBest curRow (curColumn + 1)
-  | otherwise =
-  let (_, _, currentBestDistance) = curBest
-  in
-  if  distMatrix M.! (curRow, curColumn) < currentBestDistance then
-    getMatrixMinPair distMatrix (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
-  else getMatrixMinPair distMatrix curBest curRow (curColumn + 1)
-
-
--- | getMatrixMaxPair takes distMatrix initla pinteger pair and value
--- traverses teh matrix and return maximum distance and index pair
--- if tie takes first
-getMatrixMaxPair :: M.Matrix Double ->  (Int, Int, Double) -> Int -> Int -> (Int, Int, Double)
-getMatrixMaxPair distMatrix curBest curRow curColumn
-  | curRow == M.rows distMatrix = curBest
-  | curColumn == M.cols distMatrix = getMatrixMaxPair distMatrix curBest (curRow + 1) 0
-  | curColumn == curRow = getMatrixMaxPair distMatrix curBest curRow (curColumn + 1)
-  | otherwise =
-  let (_, _, currentBestDistance) = curBest
-  in
-  if  distMatrix M.! (curRow, curColumn) > currentBestDistance then
-    getMatrixMaxPair distMatrix (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
-  else getMatrixMaxPair distMatrix curBest curRow (curColumn + 1)
-
 -- | getStartingPair returns starying pair for Wagner build
 --  closts mnimal cost pair
 --  furthest maximal cost pair

@@ -67,7 +67,6 @@ import           Debug.Trace
 import           System.Environment
 import           System.IO
 import           Text.ParserCombinators.Parsec
--- import Control.Monad (replicateM)
 import qualified Control.Monad.Parallel            as CMP
 import qualified Data.Graph.Inductive.Graph        as G
 import qualified Data.Graph.Inductive.PatriciaTree as P
@@ -81,6 +80,7 @@ import qualified SymMatrix                         as M
 import           DistanceMethods
 import           Types
 import           Utilities
+-- import Control.Monad (replicateM)
 
 
 -- | makeVertexNames takes vertgex indices and returns leaf name if < nOTUs and "HTU" ++ show Index
@@ -372,10 +372,12 @@ main =
     let randomAddsToDo = getRandomReps addSequence
     let testLeavesVect = V.fromList [0..(V.length leafNames - 1)]
     -- let (chunkSize, _) = quotRem randomAddsToDo getNumThreads
-    shuffledList <- CMP.replicateM randomAddsToDo (shuffleM testLeavesVect) -- `using` parListChunk chunkSize rdeepseq
-
+    
     -- Wagner build and refine 
-    let !treeList = doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
+    shuffledList <- CMP.replicateM randomAddsToDo (shuffleM testLeavesVect) -- `using` parListChunk chunkSize rdeepseq
+    let !treeList = if (head addSequence) == 'n' then [neighborJoining leafNames distMatrix outgroup]
+                    else if (head addSequence) == 'u' then [uPGMA leafNames distMatrix outgroup]
+                    else doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
 
     -- Filter trees from build
     let filteredTrees = keepTrees treeList buildSelect keepMethod NT.infinity -- modify to keep Tree best as well
