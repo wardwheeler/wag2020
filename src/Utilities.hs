@@ -357,3 +357,7 @@ getMatrixMaxPair distMatrix curBest curRow curColumn
     getMatrixMaxPair distMatrix (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
   else getMatrixMaxPair distMatrix curBest curRow (curColumn + 1)
 
+-- | getTreeCost takes Tree and returns cost based on sum of edge weights
+getTreeCost :: Tree -> Double
+getTreeCost inTree =
+  V.sum $ V.map getEdgeCost $ snd inTree

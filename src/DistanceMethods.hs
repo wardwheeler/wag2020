@@ -71,11 +71,19 @@ performWagnerRefinement refinement saveMethod keepMethod leafNames outGroup inTr
 -- an NJ tree
 neighborJoining :: V.Vector String -> M.Matrix Double -> String -> TreeWithData
 neighborJoining leafNames distMatrix outgroup =
-  emptyTreeWithData
+	if M.null distMatrix then error "Null matrix in neighborJoining"
+	else
+		-- get intial matrices
+		let initialBigDMatrix = makeInitialDMatrix distMatrix 0 0 []
+			(vertexVect, edgeVect, dMatrix) = addTaxa distMatrix initialBigDMatrix leafNames
+			newickString = convertToNewick leafNames outgroup (vertexVect, edgeVect)
+			treeCost = getTreeCost (vertexVect, edgeVect)
+		in
+		(newickString, (vertexVect, edgeVect), treeCost, dMatrix)
 
 -- | makeInitialDMatrix makes adjusted matrix (D) from observed (d) values
 -- assumes matrix is square and symmetrical
-makeInitialDMatrix :: M.Matrix Double -> Int -> Int -> [(Int, Int, Double)]-> M.Matrix Double
+makeInitialDMatrix :: M.Matrix Double -> Int -> Int -> [(Int, Int, Double)] -> M.Matrix Double
 makeInitialDMatrix inObsMatrix row column updateList =
     if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
     else if row == M.rows inObsMatrix then M.updateMatrix inObsMatrix updateList

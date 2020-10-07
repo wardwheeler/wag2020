@@ -47,11 +47,6 @@ import           Debug.Trace
 import           Data.Maybe
 
 
--- | getTreeCost takes Tree and returns cost based on sum of edge weights
-getTreeCost :: Tree -> Double
-getTreeCost inTree =
-  V.sum $ V.map getEdgeCost $ snd inTree
-
 -- | getStartingPair returns starying pair for Wagner build
 --  closts mnimal cost pair
 --  furthest maximal cost pair
