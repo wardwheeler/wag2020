@@ -324,6 +324,25 @@ getVertexSet edgeVect =
       in
       Set.union thisSet (getVertexSet $ V.tail edgeVect)
 
+-- | getMatrixMinPairTabu takes distMatrix initial integer pair and value
+-- traverses the matrix (skippiong rows and columns in tabuList and return minimum distance and index pair
+-- if tie takes first
+  -- call with (-1, -1, NT.infinity) 0 0
+getMatrixMinPairTabu :: M.Matrix Double -> [Int] -> (Int, Int, Double) -> Int -> Int -> (Int, Int, Double)
+getMatrixMinPairTabu distMatrix tabuList curBest curRow curColumn
+  | curRow == M.rows distMatrix = curBest
+  | curColumn == M.cols distMatrix = getMatrixMinPairTabu distMatrix tabuList curBest (curRow + 1) 0
+  | curColumn == curRow = getMatrixMinPairTabu distMatrix tabuList curBest curRow (curColumn + 1)
+  | (curColumn `elem` tabuList) || (curRow `elem` tabuList) = getMatrixMinPairTabu distMatrix tabuList curBest curRow (curColumn + 1)
+  | otherwise =
+  let (_, _, currentBestDistance) = curBest
+  in
+  if  distMatrix M.! (curRow, curColumn) < currentBestDistance then
+    getMatrixMinPairTabu distMatrix tabuList (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
+  else getMatrixMinPairTabu distMatrix tabuList curBest curRow (curColumn + 1)
+
+
+
 -- | getMatrixMinPair takes distMatrix initla pinteger pair and value
 -- traverses teh matrix and return minimum distance and index pair
 -- if tie takes first

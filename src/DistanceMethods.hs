@@ -1,6 +1,6 @@
 {- |
 Module      :  DistanceMethods.hs
-Description :  Module to calculate distance tree construction methods Neightbor-Joining, UPGMA, and WPGMA
+Description :  Module to calculate distance tree construction methods Neightbor-Joining, WPGMA, and WPGMA
               -- but with added refinement based on 4-point metric
 Copyright   :  (c) 2020 Ward C. Wheeler, Division of Invertebrate Zoology, AMNH. All rights reserved.
 License     :
@@ -36,7 +36,7 @@ Portability :  portable (I hope)
 I
 -}
 
-module DistanceMethods (neighborJoining, uPGMA, wPGMA, doWagnerS, performWagnerRefinement) where
+module DistanceMethods (neighborJoining, wPGMA, doWagnerS, performWagnerRefinement) where
 
 import qualified Data.Vector                       as V 
 import           Debug.Trace
@@ -46,21 +46,31 @@ import           Utilities
 import qualified Wagner                            as W
 import qualified Data.Number.Transfinite           as NT
 
--- | uPGMA takes a list of leaves and a distance matrixx and returns 
--- an UGPGMA tree
-uPGMA :: V.Vector String -> M.Matrix Double -> Int -> TreeWithData
-uPGMA leafNames distMatrix outgroup =
-  emptyTreeWithData
-
 -- | wPGMA takes a list of leaves and a distance matrixx and returns 
--- an wPGMA tree
+-- an WGPGMA tree
+-- WPGMA not UPGMA since the linkages are from the two descendent linkages and not weighted by 
+-- the number of taxa in each group as in https://en.wikipedia.org/wiki/WPGMA
 wPGMA :: V.Vector String -> M.Matrix Double -> Int -> TreeWithData
 wPGMA leafNames distMatrix outgroup =
-  emptyTreeWithData
+  if M.null distMatrix then error "Null matrix in WPGMA"
+  else
+    trace ("\nBuilding WPGMA tree") (
+    let numLeaves = V.length leafNames
+        leafVertexVect = V.fromList $ [0..(numLeaves - 1)]
+        ((vertexVect, edgeVect), finalMatrix) = addTaxaWPGMA distMatrix numLeaves (leafVertexVect, V.empty) []
+        wPGMATree' = convertLinkagesToEdgeWeights vertexVect (V.toList edgeVect) (V.toList edgeVect) [] numLeaves
+        -- linkage leves are not same as edgeweights so need to be converted
+        newickString = convertToNewick leafNames outgroup wPGMATree'
+        treeCost = getTreeCost wPGMATree'
+    in
+    --trace (show wPGMATree ++ "\n" ++ show wPGMATree')
+    (newickString, wPGMATree', treeCost, finalMatrix)
+    )
 
 -- | pulls dWagner function from module Wagner
 doWagnerS :: V.Vector String -> M.Matrix Double -> String -> Int -> String -> [V.Vector Int]-> [TreeWithData]
 doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSequences = 
+  trace ("\nBuilding Wagner tree") 
   W.doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSequences 
 
 -- | pulls Wagner refinement from Wagner module
@@ -74,16 +84,17 @@ neighborJoining :: V.Vector String -> M.Matrix Double -> Int -> TreeWithData
 neighborJoining leafNames distMatrix outgroup =
     if M.null distMatrix then error "Null matrix in neighborJoining"
     else
+        trace ("\nBuilding NJ tree") (
         -- get intial matrices
         let initialBigDMatrix = makeDMatrix distMatrix [] 0 0 []
             numLeaves = V.length leafNames
             leafVertexVect = V.fromList $ [0..(numLeaves - 1)]
-            nJTree = addTaxaNJ distMatrix initialBigDMatrix numLeaves (leafVertexVect, V.empty) []
+            (nJTree, finalLittleDMatrix) = addTaxaNJ distMatrix initialBigDMatrix numLeaves (leafVertexVect, V.empty) []
             newickString = convertToNewick leafNames outgroup nJTree
             treeCost = getTreeCost nJTree
         in
-        -- trace ("NJ tree " ++ show nJTree)
-        (newickString, nJTree, treeCost, distMatrix)
+        (newickString, nJTree, treeCost, finalLittleDMatrix)
+        )
 
 -- | sumAvail sums the row only thos values not already added to tree
 sumAvail :: [Int] -> Int -> [Double] -> Double
@@ -94,8 +105,6 @@ sumAvail vertInList index distList =
       let firstDist = head distList
       in
       firstDist + (sumAvail vertInList (index + 1) (tail distList))
-
-
 
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
 -- assumes matrix is square and symmetrical
@@ -122,8 +131,8 @@ makeDMatrix inObsMatrix vertInList row column updateList =
 -- then updates d and D to reflect new node and distances created
 -- updates teh column/row for vertices that are joined to be infinity so
 -- won't be chosen to join again
-pickNearestUpdateMatrix :: M.Matrix Double -> M.Matrix Double -> [Int] -> (M.Matrix Double, M.Matrix Double, Vertex, Edge, Edge, [Int])
-pickNearestUpdateMatrix littleDMatrix bigDMatrix vertInList =
+pickNearestUpdateMatrixNJ :: M.Matrix Double -> M.Matrix Double -> [Int] -> (M.Matrix Double, M.Matrix Double, Vertex, Edge, Edge, [Int])
+pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList =
     if M.null littleDMatrix then error "Null d matrix in pickNearestUpdateMatrix"
     else if M.null bigDMatrix then error "Null D matrix in pickNearestUpdateMatrix"
     else
@@ -139,7 +148,7 @@ pickNearestUpdateMatrix littleDMatrix bigDMatrix vertInList =
               -- only count values of those in
               ri  = (sumAvail vertInList 0 $ M.getFullRow littleDMatrix iMin) 
               rj  = (sumAvail vertInList 0 $ M.getFullRow littleDMatrix jMin)
-              -- seem reversed compared to examples 
+              -- seem reversed compared to examples, seems arbitrary to me (for leaf pairs at least) 
               -- diMinNewVert = (dij / 2.0) - ((ri - rj) / (2.0 * divisor))
               -- djMinNewVert = dij - diMinNewVert
               djMinNewVert = (dij / 2.0) - ((ri - rj) / (2.0 * divisor))
@@ -175,13 +184,8 @@ getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert otherVert =
 
 -- | addTaxaNJ recursively calls pickNearestUpdateMatrix untill all internal nodes are created
 -- recursively called until all (n - 2) internal vertices are created.
-addTaxaNJ :: M.Matrix Double -> M.Matrix Double -> Int -> Tree -> [Int] -> Tree
-addTaxaNJ littleDMatrix bigDMatrix numLeaves inTree vertInList = 
-  let (vertexVect, edgeVect) = inTree
-  in
-  -- completed tree, all inrternal vertieces have been created
-  -- unrooted so n + n -2
-  -- trace ("Tree vertex number: " ++ show (V.length vertexVect)) (
+addTaxaNJ :: M.Matrix Double -> M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
+addTaxaNJ littleDMatrix bigDMatrix numLeaves (vertexVect, edgeVect) vertInList = 
   let progress = show  ((fromIntegral (100 * ((V.length vertexVect) - numLeaves))/fromIntegral (numLeaves - 2)) :: Double)
   in
   trace (takeWhile (/='.') progress ++ "%") (
@@ -189,13 +193,114 @@ addTaxaNJ littleDMatrix bigDMatrix numLeaves inTree vertInList =
     let (iMin, jMin, _) = getMatrixMinPair bigDMatrix (-1, -1, NT.infinity) 0 0 
         lastEdge = (iMin, jMin, littleDMatrix M.! (iMin, jMin))
     in 
-    (vertexVect, edgeVect `V.snoc` lastEdge)
+    ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
     
   else 
-    let (newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickNearestUpdateMatrix littleDMatrix bigDMatrix vertInList 
+    let (newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList 
         newVertexVect = vertexVect `V.snoc` newVertIndex
         newEdgeVect = edgeVect V.++ (V.fromList [newEdgeI, newEdgeJ])
     in 
     --trace (M.showMatrixNicely newLittleDMatrix ++ "\n" ++ M.showMatrixNicely bigDMatrix) 
     addTaxaNJ newLittleDMatrix newBigDMatrix numLeaves (newVertexVect, newEdgeVect) newVertInList
     )
+
+-- | addTaxaWPGMA perfomrs recursive reduction of distance matrix until all internal vertices are created
+addTaxaWPGMA :: M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
+addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
+  let progress = show  ((fromIntegral (100 * ((V.length vertexVect) - numLeaves))/fromIntegral (numLeaves - 2)) :: Double)
+  in
+  trace (takeWhile (/='.') progress ++ "%") (
+  if V.length vertexVect == (2 * numLeaves) - 2 then 
+    let (iMin, jMin, _) = getMatrixMinPairTabu distMatrix vertInList (-1, -1, NT.infinity) 0 0 
+        lastEdge = (iMin, jMin, distMatrix M.! (iMin, jMin))
+    in 
+    ((vertexVect, edgeVect `V.snoc` lastEdge), distMatrix)
+
+  else -- building
+    let (newDistMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickUpdateMatrixWPGMA distMatrix  vertInList 
+        newVertexVect = vertexVect `V.snoc` newVertIndex
+        newEdgeVect = edgeVect V.++ (V.fromList [newEdgeI, newEdgeJ])
+    in 
+    --trace (M.showMatrixNicely distMatrix) 
+    addTaxaWPGMA newDistMatrix numLeaves (newVertexVect, newEdgeVect) newVertInList
+    )
+
+-- | pickUpdateMatrixWPGMA takes d matrix, pickes closesst based on d
+-- then updates d  to reflect new node and distances created
+-- updates the column/row for vertices that are joined to be infinity so
+-- won't be chosen to join again
+pickUpdateMatrixWPGMA :: M.Matrix Double -> [Int] -> (M.Matrix Double, Vertex, Edge, Edge, [Int])
+pickUpdateMatrixWPGMA distMatrix  vertInList =
+    if M.null distMatrix then error "Null d matrix in pickNearestUpdateMatrix"
+    else
+        let (iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList (-1, -1, NT.infinity) 0 0
+        in
+        --trace ("First pair " ++ show (iMin, jMin, dij)) (
+        if dij == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
+        else
+            let -- new vertex is size of distance matrix (0 indexed)
+              newVertIndex = M.rows distMatrix
+              
+              diMinNewVert = dij /2.0
+              djMinNewVert = dij /2.0
+
+              newVertInList = vertInList ++ [iMin, jMin]
+
+              -- get distances to existing vertices
+              otherVertList = [0..((M.rows distMatrix) - 1)]
+              newDistRow = fmap (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList 
+              newDistMatrix = M.addMatrixRow distMatrix (V.fromList $ newDistRow ++ [0.0])
+              
+              -- create new edges
+              newEdgeI = (newVertIndex, iMin, diMinNewVert)
+              newEdgeJ = (newVertIndex, jMin, djMinNewVert)
+            in
+            (newDistMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
+            --)
+
+-- | getNewDistWPGMA get ditance of new vertex to existing vertices WPGMA--cluster levels
+getNewDistWPGMA :: M.Matrix Double -> Int -> Int -> Double -> Double -> Int -> Double
+getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert otherVert =
+  if otherVert == iMin then diMinNewVert
+  else if otherVert == jMin then djMinNewVert
+  else 
+    let dik = distMatrix M.! (iMin, otherVert)
+        djk = distMatrix M.! (jMin, otherVert)
+    in
+    (dik + djk) / 2.0
+
+-- | convertLinkagesToEdgeWeights converts linake leevs to branch lengths
+-- by subtracting descnedent linakge from edge weight
+-- edges are created in linakege order so can use that direction, leaves are
+-- always 2nd element in edge
+convertLinkagesToEdgeWeights :: V.Vector Vertex -> [Edge] -> [Edge] -> [Edge] -> Int -> Tree
+convertLinkagesToEdgeWeights vertexVect fullEdgeList inEdgeList curEdgeList numLeaves =  
+  if null fullEdgeList then error "Null edge set in convertLinkagesToEdgeWeights"
+  else if V.null vertexVect then error "Null vertex set in convertLinkagesToEdgeWeights"
+  else if null inEdgeList then (vertexVect, V.fromList curEdgeList)
+  else if null curEdgeList then
+    -- first case, take last edge (highest linkage) special case need
+    -- to subtract both descendent linkages
+    let (eVert, uVert, linkage) = last inEdgeList  
+        eDescLinkage = if (eVert >= numLeaves) then getWeightDescLink eVert fullEdgeList else 0.0
+        uDescLinkage = if (uVert >= numLeaves) then getWeightDescLink uVert fullEdgeList else 0.0
+        newEdgeList = [(eVert, uVert, linkage - eDescLinkage - uDescLinkage)] 
+    in
+    convertLinkagesToEdgeWeights vertexVect fullEdgeList (init inEdgeList) newEdgeList numLeaves
+  else -- not first but still some edegs to go
+    let (eVert, uVert, linkage) = head inEdgeList
+        uDescLinkage = if (uVert >= numLeaves) then getWeightDescLink uVert fullEdgeList else 0.0
+        newEdgeList = (eVert, uVert, linkage - uDescLinkage) : curEdgeList
+    in
+    convertLinkagesToEdgeWeights vertexVect fullEdgeList (tail inEdgeList) newEdgeList numLeaves
+    
+-- | getWeightDescLink takes the m,pore derived (smaller linkage, 2nd vertex of edge) and returns 
+-- the weight of that edge (assumes not leaf--checked earlier)
+getWeightDescLink :: Int -> [Edge] -> Double
+getWeightDescLink uVert fullEdgeList = 
+  if null fullEdgeList then error "Edge not found in getWeightDescLink"
+  else 
+    let (eVert, _, weight) = head fullEdgeList
+    in
+    if eVert == uVert then weight
+    else getWeightDescLink uVert (tail fullEdgeList)
