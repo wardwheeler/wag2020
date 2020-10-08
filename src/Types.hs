@@ -48,6 +48,11 @@ type Tree = (V.Vector Vertex,V.Vector Edge)
 type TreeWithData = (String, Tree, Double, M.Matrix Double)
 type SplitTreeData = (V.Vector Edge,V.Vector Edge, Double, V.Vector Edge, M.Matrix Double)
 
+-- | emptyTree
+emptyTree :: Tree
+emptyTree = (V.empty, V.empty)
+
+
 -- | emptyTreeWithData
 emptyTreeWithData :: TreeWithData
 emptyTreeWithData = ("()[];", (V.empty, V.empty), 0.0, M.empty)

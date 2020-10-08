@@ -375,8 +375,8 @@ main =
     
     -- Wagner build and refine 
     shuffledList <- CMP.replicateM randomAddsToDo (shuffleM testLeavesVect) -- `using` parListChunk chunkSize rdeepseq
-    let !treeList = if (head addSequence) == 'n' then [neighborJoining leafNames distMatrix outgroup]
-                    else if (head addSequence) == 'u' then [uPGMA leafNames distMatrix outgroup]
+    let !treeList = if (head addSequence) == 'n' then [neighborJoining leafNames distMatrix outElem]
+                    else if (head addSequence) == 'u' then [uPGMA leafNames distMatrix outElem]
                     else doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
 
     -- Filter trees from build

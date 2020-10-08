@@ -173,11 +173,6 @@ calculateWagnerTrees distMatrix choiceOpt =
     in
     (newTree, endMatrix)
 
--- | getEdgeCost returns weight form edge tuple
-getEdgeCost :: (Vertex, Vertex, Weight) -> Double
-getEdgeCost (_, _, edgeWeight) = edgeWeight
-
-
 -- | makeTreeFromOrder  takes an input order and other arguemnts and cretes tree using a single additoin
 -- seqeunce, best plaecment for the leaf each round
 makeTreeFromOrder :: M.Matrix Double -> Tree -> Int -> Int -> V.Vector Int -> (Tree, M.Matrix Double)

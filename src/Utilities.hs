@@ -129,9 +129,9 @@ removeCrap inString =
     else if firstChar == ',' && secondChar == ')' then ')' : removeCrap (drop 2 inString)
     else firstChar : removeCrap (tail inString)
 
--- | convertToNewick converts Tree rep to Newick STring
+-- | convertToNewick converts Tree rep to Newick String
 -- includes edge cost--splits root edge cost into halves to help
--- tree viewers like FigTree
+-- tree viewers like FigTree (so input is unrooted)
 -- NEED TO ADD smaller group left larger group right for more legible trees
 convertToNewickGuts :: V.Vector String ->Int ->  Tree -> String
 convertToNewickGuts leafNames outGroup wagTree =
@@ -361,3 +361,9 @@ getMatrixMaxPair distMatrix curBest curRow curColumn
 getTreeCost :: Tree -> Double
 getTreeCost inTree =
   V.sum $ V.map getEdgeCost $ snd inTree
+
+-- | getEdgeCost returns weight form edge tuple
+getEdgeCost :: (Vertex, Vertex, Weight) -> Double
+getEdgeCost (_, _, edgeWeight) = edgeWeight
+
+
