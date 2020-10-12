@@ -358,6 +358,7 @@ main =
     else hPutStrLn stderr ("\nAddition sequence: random with " ++ drop 7 addSequence ++ " replicates" )
     hPutStrLn stderr ("Output set: " ++ saveMethod )
 
+    -- Checks on input distances
     if V.length leafNames /= length (tail rawData') then error ("Input matrix is not square: " ++ show (V.length leafNames) ++ " leaves and " ++
       show (length $ tail rawData') ++ " rows")
     else hPutStrLn stderr ("Input distance data for " ++ show (V.length leafNames) ++ " leaves")
@@ -365,8 +366,17 @@ main =
     if not rowLengthCheck then error "Row lengths do not equal leaf number"
     else hPutStrLn stderr "Input matrix is square"
 
+
     -- Convert to matrix of Doubles
     let distMatrix = M.fromLists $ fmap (fmap (read :: String -> Double)) (tail rawData')
+
+    -- Check that distances are non-negative
+    let nonNegative =  fmap (fmap (>= 0.0)) (M.toLists distMatrix)
+    let nonNegative' = foldl' (&&) True $ fmap (foldl' (&&) True) nonNegative
+    _ <- if nonNegative' then
+                error "Input distances non-negative"
+            else
+                error "Input distance has negative values--must all be >= 0.0"
 
     -- Callan random shuffle
     let randomAddsToDo = getRandomReps addSequence
