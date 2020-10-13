@@ -371,8 +371,8 @@ main =
     let distMatrix = M.fromLists $ fmap (fmap (read :: String -> Double)) (tail rawData')
 
     -- Check that distances are non-negative
-    let nonNegative =  fmap (fmap (>= 0.0)) (M.toLists distMatrix)
-    let nonNegative' = foldl' (&&) True $ fmap (foldl' (&&) True) nonNegative
+    let nonNegative =  M.map (>= 0.0) distMatrix
+    let nonNegative' = foldl' (&&) True $ V.map (foldl' (&&) True) nonNegative
     _ <- if nonNegative' then
                 error "Input distances non-negative"
             else
