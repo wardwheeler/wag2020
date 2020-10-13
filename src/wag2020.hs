@@ -374,7 +374,7 @@ main =
     let nonNegative =  M.map (>= 0.0) distMatrix
     let nonNegative' = foldl' (&&) True $ V.map (foldl' (&&) True) nonNegative
     _ <- if nonNegative' then
-                error "Input distances non-negative"
+                hPutStrLn stderr "Input distances non-negative"
             else
                 error "Input distance has negative values--must all be >= 0.0"
 
