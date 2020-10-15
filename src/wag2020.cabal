@@ -58,3 +58,4 @@ executable wag2020
                 , Types 
                 , Utilities 
                 , Wagner
+                , PhyloParsers

@@ -302,3 +302,4 @@ getWeightDescLink uVert fullEdgeList =
     in
     if eVert == uVert then weight
     else getWeightDescLink uVert (tail fullEdgeList)
+    

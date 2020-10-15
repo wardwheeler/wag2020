@@ -47,6 +47,10 @@ import           Data.List
 import qualified System.Random.Shuffle             as RandS
 import qualified System.Random                     as Rand
 import qualified Data.Set                          as Set
+import qualified Data.Graph.Inductive.Graph        as G
+import qualified Data.Graph.Inductive.PatriciaTree as P
+import qualified Data.Text.Lazy                    as T
+import qualified PhyloParsers                      as PP
 
 
 
@@ -111,6 +115,56 @@ myStrategy = rdeepseq
 {-# NOINLINE getNumThreads #-}
 getNumThreads :: Int
 getNumThreads = unsafePerformIO getNumCapabilities
+
+-- | vertex2FGLNode take vertex of Int  and a Vector of Strings (leaf names) and returns
+-- fgl node with type T.Text
+vertex2FGLNode :: V.Vector String -> Vertex -> (Int, T.Text)
+vertex2FGLNode leafVect vertIndex= 
+  if vertIndex < V.length leafVect then (vertIndex,  T.pack (leafVect V.! vertIndex))
+  else  
+    let vertexName = "HTU" ++ (show $ vertIndex - (V.length leafVect))
+    in
+    (vertIndex, T.pack vertexName)
+
+-- | treeFGL take a Treee type and converts to an fgl graph
+-- to be used with PhylParsers module hence Text
+tree2FGL :: Tree -> V.Vector String -> P.Gr T.Text Double
+tree2FGL inTree@(inVertexVect, inEdgeVect) leafNameVect =
+  if inTree == emptyTree then error "Empty tree in tree2FGL"
+  else
+    let fglNodes = V.map (vertex2FGLNode leafNameVect) inVertexVect
+    in
+    G.mkGraph (V.toList fglNodes) (V.toList inEdgeVect)
+
+-- | convertToNewick generates a newick file by converting Tree type to FGL Graph,
+-- adds a root and two new edges (deleting root edge)
+-- and calls convert frinction from PhyloParsers
+convertToNewick' :: V.Vector String -> Int -> Tree -> String
+convertToNewick' leafNames outGroup inTree@(vertexVect, edgeVect) =
+  if inTree == emptyTree then error "Empty tree in convertToNewick"
+  else if V.null leafNames then error "Empty leqf names in convertToNewick"
+  else
+    let (edgeIndex, (rootVertL, rootVertR, rootWeight)) = getEdgeRootIndex 0 outGroup edgeVect
+        rootVertex = (V.length vertexVect)
+        rootEdgeL = (rootVertex, rootVertL, rootWeight / 2.0) 
+        rootEdgeR = (rootVertex, rootVertR, rootWeight / 2.0)
+        newEdgeVect = (V.fromList [rootEdgeL, rootEdgeR]) V.++  ((V.take (edgeIndex - 1) edgeVect) V.++ (V.drop edgeIndex edgeVect))
+        newVertexVect = V.snoc vertexVect rootVertex
+        fglTree = tree2FGL (newVertexVect, newEdgeVect) leafNames
+    in
+    PP.fglList2ForestEnhancedNewickString [fglTree] True
+  
+-- | getEdgeRootIndex takes edge Vect, Index, and determines edges from root
+getEdgeRootIndex :: Int -> Int -> V.Vector Edge -> (Int, Edge)
+getEdgeRootIndex edgeIndex outgroup edgeVect =
+  if V.null edgeVect then error "Root edge not found"
+  else
+   let (eVect, uVect, _) = V.head edgeVect
+   in
+   if (eVect == outgroup) || (uVect == outgroup) then (edgeIndex, V.head edgeVect) 
+  else getEdgeRootIndex (edgeIndex + 1) outgroup (V.tail edgeVect)
+
+
 
 -- | convertToNewick wrapper to remove double commas
 convertToNewick :: V.Vector String -> Int -> Tree -> String
