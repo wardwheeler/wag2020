@@ -163,7 +163,7 @@ pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
   | M.null littleDMatrix = error "Null d matrix in pickNearestUpdateMatrix"
   | M.null bigDMatrix = error "Null D matrix in pickNearestUpdateMatrix"
   | otherwise =
-    let !(iMin, jMin, distIJ) = getMatrixMinPairTabu bigDMatrix vertInList -- (-1, -1, NT.infinity) 0 0
+    let (iMin, jMin, distIJ) = getMatrixMinPairTabu bigDMatrix vertInList -- (-1, -1, NT.infinity) 0 0
     in
     -- trace ("First pair " ++ show (iMin, jMin, distIJ)) (
     if distIJ == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
@@ -185,11 +185,11 @@ pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
 
           -- get distances to existing vertices
           otherVertList = [0..(M.rows littleDMatrix - 1)]
-          !newLittleDRow = seqParMap myStrategy (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList
+          newLittleDRow = seqParMap myStrategy (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList
           newLittleDMatrix = M.addMatrixRow littleDMatrix (V.fromList $ newLittleDRow ++ [0.0])
           -- recalculate whole D matrix since new row affects all the original ones  (except those merged)
           -- included vertex values set to infinity so won't be chosen later
-          !newBigDMatrix = makeDMatrix newLittleDMatrix newVertInList -- 0 0 []
+          newBigDMatrix = makeDMatrix newLittleDMatrix newVertInList -- 0 0 []
 
           -- create new edges
           newEdgeI = (newVertIndex, iMin, diMinNewVert)
@@ -223,7 +223,7 @@ addTaxaNJ littleDMatrix bigDMatrix numLeaves (vertexVect, edgeVect) vertInList =
     ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
 
   else
-    let !(newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
+    let (newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
         newVertexVect = vertexVect `V.snoc` newVertIndex
         newEdgeVect = edgeVect V.++ V.fromList [newEdgeI, newEdgeJ]
     in
@@ -244,7 +244,7 @@ addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
     ((vertexVect, edgeVect `V.snoc` lastEdge), distMatrix)
 
   else -- building
-    let !(newDistMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickUpdateMatrixWPGMA distMatrix  vertInList
+    let (newDistMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickUpdateMatrixWPGMA distMatrix  vertInList
         newVertexVect = vertexVect `V.snoc` newVertIndex
         newEdgeVect = edgeVect V.++ V.fromList [newEdgeI, newEdgeJ]
     in
@@ -260,7 +260,7 @@ pickUpdateMatrixWPGMA :: M.Matrix Double -> [Int] -> (M.Matrix Double, Vertex, E
 pickUpdateMatrixWPGMA distMatrix  vertInList =
     if M.null distMatrix then error "Null d matrix in pickNearestUpdateMatrix"
     else
-        let !(iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
+        let (iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
         in
         --trace ("First pair " ++ show (iMin, jMin, dij)) (
         if dij == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
@@ -275,7 +275,7 @@ pickUpdateMatrixWPGMA distMatrix  vertInList =
 
               -- get distances to existing vertices
               otherVertList = [0..(M.rows distMatrix - 1)]
-              !newDistRow = seqParMap myStrategy (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList
+              newDistRow = seqParMap myStrategy (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList
               newDistMatrix = M.addMatrixRow distMatrix (V.fromList $ newDistRow ++ [0.0])
 
               -- create new edges
