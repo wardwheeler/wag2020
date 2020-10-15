@@ -194,7 +194,7 @@ addTaxaNJ littleDMatrix bigDMatrix numLeaves (vertexVect, edgeVect) vertInList =
     ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
 
   else
-    let (newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
+    let !(newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
         newVertexVect = vertexVect `V.snoc` newVertIndex
         newEdgeVect = edgeVect V.++ V.fromList [newEdgeI, newEdgeJ]
     in
@@ -215,7 +215,7 @@ addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
     ((vertexVect, edgeVect `V.snoc` lastEdge), distMatrix)
 
   else -- building
-    let (newDistMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickUpdateMatrixWPGMA distMatrix  vertInList
+    let !(newDistMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList) = pickUpdateMatrixWPGMA distMatrix  vertInList
         newVertexVect = vertexVect `V.snoc` newVertIndex
         newEdgeVect = edgeVect V.++ V.fromList [newEdgeI, newEdgeJ]
     in
