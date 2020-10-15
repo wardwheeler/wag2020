@@ -64,7 +64,7 @@ wPGMA leafNames distMatrix outgroup =
         treeCost = getTreeCost wPGMATree'
     in
     --trace (show wPGMATree ++ "\n" ++ show wPGMATree')
-    (newickString, wPGMATree', treeCost, finalMatrix)
+    (newickString ++ "[" ++ (show treeCost) ++ "];", wPGMATree', treeCost, finalMatrix)
     )
 
 -- | pulls dWagner function from module Wagner
@@ -91,7 +91,7 @@ neighborJoining leafNames distMatrix outgroup =
             newickString = convertToNewick leafNames outgroup nJTree
             treeCost = getTreeCost nJTree
         in
-        (newickString, nJTree, treeCost, finalLittleDMatrix)
+        (newickString ++ "[" ++ (show treeCost) ++ "];", nJTree, treeCost, finalLittleDMatrix)
         )
 
 -- | sumAvail sums the row only thos values not already added to tree
