@@ -84,7 +84,7 @@ neighborJoining leafNames distMatrix outgroup =
     else
         trace "\nBuilding NJ tree" (
         -- get intial matrices
-        let initialBigDMatrix = makeDMatrix distMatrix [] 0 0 []
+        let initialBigDMatrix = makeDMatrix distMatrix [] -- 0 0 []
             numLeaves = V.length leafNames
             leafVertexVect = V.fromList [0..(numLeaves - 1)]
             (nJTree, finalLittleDMatrix) = addTaxaNJ distMatrix initialBigDMatrix numLeaves (leafVertexVect, V.empty) []
@@ -104,18 +104,47 @@ sumAvail vertInList index distList
   in
   firstDist + sumAvail vertInList (index + 1) (tail distList)
 
+-- | makeDMatrixRow make a rsingle row of the bif D matrix
+makeDMatrixRow :: M.Matrix Double -> [Int] -> Int -> Int -> V.Vector Double
+makeDMatrixRow inObsMatrix vertInList column row =
+  if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
+  else if row `elem` vertInList then V.replicate (V.length (inObsMatrix V.! row)) NT.infinity
+  else if column `elem` vertInList then V.cons NT.infinity (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+  else if column == V.length (inObsMatrix V.! row) then V.empty
+  else 
+    let dij = inObsMatrix M.! (row, column)
+        divisor = (fromIntegral (M.rows inObsMatrix) - 2) - fromIntegral (length vertInList)
+        ri  = (sumAvail vertInList 0 $ M.getFullRow inObsMatrix row)
+        rj  = (sumAvail vertInList 0 $ M.getFullRow inObsMatrix column)
+        bigDij = dij - ((ri + rj) / divisor)
+    in
+    V.cons bigDij (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+
+
+-- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
+-- assumes matrix is square and symmetrical
+-- makes values Infinity if already added
+-- adjust ri and rj to bew based on on values not in termInList
+-- does by row so can be parallelized call with column = 0 update list []
+-- makes DMatrix direclty not via M.updateMatrix
+makeDMatrix :: M.Matrix Double -> [Int] -> M.Matrix Double
+makeDMatrix inObsMatrix vertInList  =
+  if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
+  else 
+      V.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..((M.rows inObsMatrix) - 1)]
+
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
 -- assumes matrix is square and symmetrical
 -- makes values Infinity if already added
   -- adjust ri and rj to bew based on on values not in termInList
-makeDMatrix :: M.Matrix Double -> [Int] -> Int -> Int -> [(Int, Int, Double)] -> M.Matrix Double
-makeDMatrix inObsMatrix vertInList row column updateList
+makeDMatrix' :: M.Matrix Double -> [Int] -> Int -> Int -> [(Int, Int, Double)] -> M.Matrix Double
+makeDMatrix' inObsMatrix vertInList row column updateList
   | M.null inObsMatrix = error "Null matrix in makeInitialDMatrix"
   | row == M.rows inObsMatrix = M.updateMatrix inObsMatrix updateList
-  | column == M.cols inObsMatrix = makeDMatrix inObsMatrix vertInList (row + 1) 0 updateList
-  | column == row = makeDMatrix inObsMatrix vertInList row (column + 1) ((row, column, 0.0) : updateList)
+  | column == M.cols inObsMatrix = makeDMatrix' inObsMatrix vertInList (row + 1) 0 updateList
+  | column == row = makeDMatrix' inObsMatrix vertInList row (column + 1) ((row, column, 0.0) : updateList)
   | (column `elem` vertInList) || (row `elem` vertInList) =
-      makeDMatrix inObsMatrix vertInList row (column + 1) ((row, column, NT.infinity) : updateList)
+      makeDMatrix' inObsMatrix vertInList row (column + 1) ((row, column, NT.infinity) : updateList)
   | otherwise =
     let dij = inObsMatrix M.! (row, column)
         divisor = (fromIntegral (M.rows inObsMatrix) - 2) - fromIntegral (length vertInList)
@@ -123,7 +152,7 @@ makeDMatrix inObsMatrix vertInList row column updateList
         rj  = (sumAvail vertInList 0 $ M.getFullRow inObsMatrix column)
         bigDij = dij - ((ri + rj) / divisor)
     in
-    makeDMatrix inObsMatrix vertInList row (column + 1) ((row, column, bigDij) : updateList)
+    makeDMatrix' inObsMatrix vertInList row (column + 1) ((row, column, bigDij) : updateList)
 
 -- | pickNearestUpdateMatrix takes d and D matrices, pickes nearest based on D
 -- then updates d and D to reflect new node and distances created
@@ -134,7 +163,7 @@ pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
   | M.null littleDMatrix = error "Null d matrix in pickNearestUpdateMatrix"
   | M.null bigDMatrix = error "Null D matrix in pickNearestUpdateMatrix"
   | otherwise =
-    let (iMin, jMin, distIJ) = getMatrixMinPair bigDMatrix (-1, -1, NT.infinity) 0 0
+    let !(iMin, jMin, distIJ) = getMatrixMinPairTabu bigDMatrix vertInList -- (-1, -1, NT.infinity) 0 0
     in
     -- trace ("First pair " ++ show (iMin, jMin, distIJ)) (
     if distIJ == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
@@ -156,11 +185,11 @@ pickNearestUpdateMatrixNJ littleDMatrix bigDMatrix vertInList
 
           -- get distances to existing vertices
           otherVertList = [0..(M.rows littleDMatrix - 1)]
-          newLittleDRow = fmap (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList
+          !newLittleDRow = seqParMap myStrategy (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList
           newLittleDMatrix = M.addMatrixRow littleDMatrix (V.fromList $ newLittleDRow ++ [0.0])
           -- recalculate whole D matrix since new row affects all the original ones  (except those merged)
           -- included vertex values set to infinity so won't be chosen later
-          newBigDMatrix = makeDMatrix newLittleDMatrix newVertInList 0 0 []
+          !newBigDMatrix = makeDMatrix newLittleDMatrix newVertInList -- 0 0 []
 
           -- create new edges
           newEdgeI = (newVertIndex, iMin, diMinNewVert)
@@ -209,7 +238,7 @@ addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
   in
   trace (takeWhile (/='.') progress ++ "%") (
   if V.length vertexVect == (2 * numLeaves) - 2 then
-    let (iMin, jMin, _) = getMatrixMinPairTabu distMatrix vertInList (-1, -1, NT.infinity) 0 0
+    let (iMin, jMin, _) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
         lastEdge = (iMin, jMin, distMatrix M.! (iMin, jMin))
     in
     ((vertexVect, edgeVect `V.snoc` lastEdge), distMatrix)
@@ -231,7 +260,7 @@ pickUpdateMatrixWPGMA :: M.Matrix Double -> [Int] -> (M.Matrix Double, Vertex, E
 pickUpdateMatrixWPGMA distMatrix  vertInList =
     if M.null distMatrix then error "Null d matrix in pickNearestUpdateMatrix"
     else
-        let (iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList (-1, -1, NT.infinity) 0 0
+        let !(iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
         in
         --trace ("First pair " ++ show (iMin, jMin, dij)) (
         if dij == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
@@ -246,7 +275,7 @@ pickUpdateMatrixWPGMA distMatrix  vertInList =
 
               -- get distances to existing vertices
               otherVertList = [0..(M.rows distMatrix - 1)]
-              newDistRow = fmap (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList
+              !newDistRow = seqParMap myStrategy (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList
               newDistMatrix = M.addMatrixRow distMatrix (V.fromList $ newDistRow ++ [0.0])
 
               -- create new edges

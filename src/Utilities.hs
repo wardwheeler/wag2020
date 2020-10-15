@@ -51,6 +51,7 @@ import qualified Data.Graph.Inductive.Graph        as G
 import qualified Data.Graph.Inductive.PatriciaTree as P
 import qualified Data.Text.Lazy                    as T
 import qualified PhyloParsers                      as PP
+import qualified Data.Number.Transfinite           as NT
 
 
 
@@ -83,6 +84,9 @@ fst3 (d,_,_) = d
 
 snd3 :: (a,b,c) -> b
 snd3 (_,e,_) = e
+
+thd3 :: (a,b,c) -> c
+thd3 (_,_,e) = e
 
 fst4 :: (a,b,c,d) -> a
 fst4 (e,_,_,_) = e
@@ -378,22 +382,55 @@ getVertexSet edgeVect =
       in
       Set.union thisSet (getVertexSet $ V.tail edgeVect)
 
+-- | getMinRowDistMatrix distMatrix tabuList
+getMinRowDistMatrix :: M.Matrix Double -> [Int] -> (Int, Double) -> Int -> Int -> (Int, Int, Double)
+getMinRowDistMatrix distMatrix tabuList minPair@(minCol, minVal) curColumn row =
+  if curColumn == V.length (distMatrix V.! row) then (row, minCol, minVal)
+  else if row `elem` tabuList then (-1,-1, NT.infinity)
+  else if curColumn `elem` tabuList then getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
+  else
+    let firstVal = distMatrix M.! (row, curColumn)
+    in
+    if firstVal < minVal then getMinRowDistMatrix distMatrix tabuList (curColumn, firstVal) (curColumn + 1) row
+    else getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
+
+
+-- | compareTriples take two triples and orders them based on the smaller thrid element
+minTriples :: (Ord c) => (a,b,c) -> (a,b,c) -> Ordering
+minTriples (_,__,c) (_,_,d) = 
+  if (c < d) then LT 
+  else if (c > d) then GT
+  else EQ
+
+-- | getMatrixMinPairTabu' takes distMatrix initial integer pair and value
+-- traverses the matrix (skippiong rows and columns in tabuList and return minimum distance and index pair
+-- if tie takes first
+-- gets minimum by row and parallelizes ovcer rows
+  -- call with (-1, -1, NT.infinity) 0 0
+getMatrixMinPairTabu :: M.Matrix Double -> [Int] -> (Int, Int, Double)
+getMatrixMinPairTabu distMatrix tabuList =
+  if M.null distMatrix then error "Empty matrix in getMatrixPairTabu"
+  else 
+    let minValueList = seqParMap myStrategy (getMinRowDistMatrix distMatrix tabuList (-1, NT.infinity) 0) [0..((M.rows distMatrix) - 1)]
+    in
+    minimumBy minTriples minValueList
+
 -- | getMatrixMinPairTabu takes distMatrix initial integer pair and value
 -- traverses the matrix (skippiong rows and columns in tabuList and return minimum distance and index pair
 -- if tie takes first
   -- call with (-1, -1, NT.infinity) 0 0
-getMatrixMinPairTabu :: M.Matrix Double -> [Int] -> (Int, Int, Double) -> Int -> Int -> (Int, Int, Double)
-getMatrixMinPairTabu distMatrix tabuList curBest curRow curColumn
+getMatrixMinPairTabu' :: M.Matrix Double -> [Int] -> (Int, Int, Double) -> Int -> Int -> (Int, Int, Double)
+getMatrixMinPairTabu' distMatrix tabuList curBest curRow curColumn
   | curRow == M.rows distMatrix = curBest
-  | curColumn == M.cols distMatrix = getMatrixMinPairTabu distMatrix tabuList curBest (curRow + 1) 0
-  | curColumn == curRow = getMatrixMinPairTabu distMatrix tabuList curBest curRow (curColumn + 1)
-  | (curColumn `elem` tabuList) || (curRow `elem` tabuList) = getMatrixMinPairTabu distMatrix tabuList curBest curRow (curColumn + 1)
+  | curColumn == M.cols distMatrix = getMatrixMinPairTabu' distMatrix tabuList curBest (curRow + 1) 0
+  | curColumn == curRow = getMatrixMinPairTabu' distMatrix tabuList curBest curRow (curColumn + 1)
+  | (curColumn `elem` tabuList) || (curRow `elem` tabuList) = getMatrixMinPairTabu' distMatrix tabuList curBest curRow (curColumn + 1)
   | otherwise =
   let (_, _, currentBestDistance) = curBest
   in
   if  distMatrix M.! (curRow, curColumn) < currentBestDistance then
-    getMatrixMinPairTabu distMatrix tabuList (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
-  else getMatrixMinPairTabu distMatrix tabuList curBest curRow (curColumn + 1)
+    getMatrixMinPairTabu' distMatrix tabuList (curRow, curColumn, distMatrix M.! (curRow, curColumn)) curRow (curColumn + 1)
+  else getMatrixMinPairTabu' distMatrix tabuList curBest curRow (curColumn + 1)
 
 
 
