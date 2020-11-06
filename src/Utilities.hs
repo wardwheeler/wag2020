@@ -156,14 +156,15 @@ reIndexEdges inVertexList (e,u,w) =
 
 -- | makeVertexNames takes vertgex indices and returns leaf name if < nOTUs and "HTU" ++ show Index
 -- if not
-makeVertexNames :: [Vertex] -> Int -> V.Vector String -> [String]
-makeVertexNames vertList nOTUs leafNames =
+makeVertexNames :: [Vertex] -> Int -> V.Vector String -> Bool -> [String]
+makeVertexNames vertList nOTUs leafNames nameHTUs =
   if null vertList then []
   else
       let firstVert = head vertList
       in
-      if firstVert < nOTUs then (leafNames V.! firstVert) : makeVertexNames (tail vertList) nOTUs leafNames
-      else ("HTU" ++ show firstVert) : makeVertexNames (tail vertList) nOTUs leafNames
+      if firstVert < nOTUs then (leafNames V.! firstVert) : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs
+      else if nameHTUs then ("HTU" ++ show firstVert) : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs 
+      else "" : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs
 
 -- | directSingleEdge takes an Int and makes that 'e' and otehr vertex as 'u' in edge (e->u)
 directSingleEdge :: Int -> Edge -> Edge
@@ -216,7 +217,7 @@ convertToDirectedGraph leafList outgroupIndex inTree =
       nOTUs = length leafList
       -- should be stright 0->n-1 but in case some vertex number if missing
       vertexList = sort $ Set.toList $ getVertexSet edgeVect
-      vertexNames = makeVertexNames vertexList nOTUs leafList
+      vertexNames = makeVertexNames vertexList nOTUs leafList True
       labelledVertexList = Data.List.zip vertexList vertexNames
       edgeList = V.toList $ directEdges outgroupIndex nOTUs True edgeVect
   in
@@ -229,7 +230,7 @@ convertToDirectedGraphText leafList outgroupIndex inTree =
       nOTUs = length leafList
       -- should be stright 0->n-1 but in case some vertex number if missing
       vertexList = sort $ Set.toList $ getVertexSet edgeVect
-      vertexNames = makeVertexNames vertexList nOTUs leafList
+      vertexNames = makeVertexNames vertexList nOTUs leafList False
       labelledVertexList = Data.List.zip vertexList (fmap T.pack vertexNames)
       edgeList = V.toList $ directEdges outgroupIndex nOTUs True edgeVect
   in
@@ -240,7 +241,7 @@ convertToDirectedGraphText leafList outgroupIndex inTree =
 -- adds a root and two new edges (deleting root edge)
 -- and calls convert function from PhyloParsers
 convertToNewick :: V.Vector String -> Int -> Tree -> String
-convertToNewick leafNames outGroup inTree@(inVertexVect, inEdgeVect) =
+convertToNewick leafNames outGroup inTree =
   if inTree == emptyTree then error "Empty tree in convertToNewick"
   else if V.null leafNames then error "Empty leaf names in convertToNewick"
   else
