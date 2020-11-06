@@ -52,7 +52,8 @@ import qualified Data.Graph.Inductive.PatriciaTree as P
 import qualified Data.Text.Lazy                    as T
 import qualified PhyloParsers                      as PP
 import qualified Data.Number.Transfinite           as NT
-
+import           Debug.Trace 
+import           Data.Maybe
 
 
 -- | localRoundtakes a double multiplies by 10^precisoin, rounds to integer then divides
@@ -138,25 +139,128 @@ tree2FGL inTree@(inVertexVect, inEdgeVect) leafNameVect =
   else
     let fglNodes = V.map (vertex2FGLNode leafNameVect) inVertexVect
     in
+    -- trace ("tree2FGL orig, vertices, edges =  " ++ (show $ length inVertexVect ) ++ " "  ++ (show $ length fglNodes ) ++ " " ++ (show $ length inEdgeVect ))
     G.mkGraph (V.toList fglNodes) (V.toList inEdgeVect)
+
+-- reIndexEdges take a list of vertices as integer indices and an edges (Int, Int, Double)
+-- and retuns a new vertex with the indives of the vertex labels
+reIndexEdges :: [Int] -> Edge -> Edge
+reIndexEdges inVertexList (e,u,w) = 
+  if null inVertexList then error "Null inVertexList in reIndexEdges"
+  else 
+    let newE = elemIndex e inVertexList
+        newU = elemIndex u inVertexList
+    in 
+    --un safe not testing but list is created from edges first
+    (fromJust newE, fromJust newU, w)
+
+-- | makeVertexNames takes vertgex indices and returns leaf name if < nOTUs and "HTU" ++ show Index
+-- if not
+makeVertexNames :: [Vertex] -> Int -> V.Vector String -> [String]
+makeVertexNames vertList nOTUs leafNames =
+  if null vertList then []
+  else
+      let firstVert = head vertList
+      in
+      if firstVert < nOTUs then (leafNames V.! firstVert) : makeVertexNames (tail vertList) nOTUs leafNames
+      else ("HTU" ++ show firstVert) : makeVertexNames (tail vertList) nOTUs leafNames
+
+-- | directSingleEdge takes an Int and makes that 'e' and otehr vertex as 'u' in edge (e->u)
+directSingleEdge :: Int -> Edge -> Edge
+directSingleEdge index (a,b,w)
+  | a == index = (a,b,w)
+  | b == index = (b,a,w)
+  | otherwise = error ("Index " ++ show index ++ " doesn't match edge " ++ show (a,b,w) ++ " in directSingleEdge")
+
+-- | getChildEdges returns the two edges that are childre of a vertex
+getChildEdges :: Int -> Int -> V.Vector Edge -> V.Vector Edge
+getChildEdges vertIndex nLeaves inEdgeVect
+  | V.null inEdgeVect = V.empty
+  | vertIndex < nLeaves = error ("Looking for child of leaf " ++ show (vertIndex, nLeaves))
+  | otherwise =
+    let (a,b,w) = V.head inEdgeVect
+    in
+    if (a == vertIndex) || (b == vertIndex) then V.cons (a,b,w) (getChildEdges vertIndex nLeaves (V.tail inEdgeVect)) else getChildEdges vertIndex nLeaves (V.tail inEdgeVect)
+
+-- | directexEdges takes a vector of edges and outgrop index and directs the edges (parent -> child vertices) based on that
+directEdges :: Int -> Int -> Bool -> V.Vector Edge -> V.Vector Edge
+directEdges vertIndex nLeaves isFirst inEdgeVect
+  | V.null inEdgeVect = V.empty
+  | isFirst = --to find out group edge order larger to smaller will have outgroup index second
+    let outgroupEdge = getEdgeRoot vertIndex inEdgeVect
+        remainingEdgeVect = subtractVector (V.singleton outgroupEdge) inEdgeVect
+        (a,b,w) = orderEdge outgroupEdge
+    in
+    V.cons (a,b,w) (directEdges a nLeaves False remainingEdgeVect)
+  | vertIndex < nLeaves = V.empty
+  | otherwise = -- not outgroup but regular node, get two child edges
+    let descdendantEdges = getChildEdges vertIndex nLeaves inEdgeVect
+        remainingEdgeVect = subtractVector descdendantEdges inEdgeVect
+        newDescEdges = V.map (directSingleEdge vertIndex) descdendantEdges
+    in
+    if V.length newDescEdges /= 2 then error ("There should be 2 child edges for index " ++ show vertIndex ++ " and there are(is) " ++ show (V.length newDescEdges) ++ " " ++ show newDescEdges)
+    else
+        let (_, bf, _) = V.head newDescEdges
+            (_, bs, _) = V.last newDescEdges
+            firstSubEdges = directEdges bf nLeaves False remainingEdgeVect
+            remainingEdgeVect' = subtractVector firstSubEdges remainingEdgeVect
+            secondSubEdges = directEdges bs nLeaves False remainingEdgeVect'
+        in
+        (newDescEdges V.++ (firstSubEdges V.++ secondSubEdges))
+
+
+-- | convertToGraph takes Vertex of names and a tree and return inductive Graph format
+convertToDirectedGraph :: V.Vector String -> Int -> Tree -> P.Gr String Double
+convertToDirectedGraph leafList outgroupIndex inTree =
+  let (_, edgeVect) = inTree
+      nOTUs = length leafList
+      -- should be stright 0->n-1 but in case some vertex number if missing
+      vertexList = sort $ Set.toList $ getVertexSet edgeVect
+      vertexNames = makeVertexNames vertexList nOTUs leafList
+      labelledVertexList = Data.List.zip vertexList vertexNames
+      edgeList = V.toList $ directEdges outgroupIndex nOTUs True edgeVect
+  in
+  G.mkGraph labelledVertexList edgeList
+
+-- | convertToGraphText takes Vertex of names and a tree and return inductive Graph format
+convertToDirectedGraphText :: V.Vector String -> Int -> Tree -> P.Gr T.Text Double
+convertToDirectedGraphText leafList outgroupIndex inTree =
+  let (_, edgeVect) = inTree
+      nOTUs = length leafList
+      -- should be stright 0->n-1 but in case some vertex number if missing
+      vertexList = sort $ Set.toList $ getVertexSet edgeVect
+      vertexNames = makeVertexNames vertexList nOTUs leafList
+      labelledVertexList = Data.List.zip vertexList (fmap T.pack vertexNames)
+      edgeList = V.toList $ directEdges outgroupIndex nOTUs True edgeVect
+  in
+  G.mkGraph labelledVertexList edgeList
+
 
 -- | convertToNewick generates a newick file by converting Tree type to FGL Graph,
 -- adds a root and two new edges (deleting root edge)
--- and calls convert frinction from PhyloParsers
-convertToNewick' :: V.Vector String -> Int -> Tree -> String
-convertToNewick' leafNames outGroup inTree@(vertexVect, edgeVect) =
+-- and calls convert function from PhyloParsers
+convertToNewick :: V.Vector String -> Int -> Tree -> String
+convertToNewick leafNames outGroup inTree@(inVertexVect, inEdgeVect) =
   if inTree == emptyTree then error "Empty tree in convertToNewick"
-  else if V.null leafNames then error "Empty leqf names in convertToNewick"
+  else if V.null leafNames then error "Empty leaf names in convertToNewick"
   else
-    let (edgeIndex, (rootVertL, rootVertR, rootWeight)) = getEdgeRootIndex 0 outGroup edgeVect
+    {-
+    let vertexList = nub $ V.toList $ V.concat [inVertexVect, (V.map fst3 inEdgeVect), (V.map snd3 inEdgeVect)]
+        vertexVect = V.fromList $ vertexList
+        edgeVect = inEdgeVect -- V.map (reIndexEdges vertexList) inEdgeVect
+        (edgeIndex, (rootVertL, rootVertR, rootWeight)) = getEdgeRootIndex 0 outGroup edgeVect
         rootVertex = (V.length vertexVect)
         rootEdgeL = (rootVertex, rootVertL, rootWeight / 2.0) 
         rootEdgeR = (rootVertex, rootVertR, rootWeight / 2.0)
         newEdgeVect = (V.fromList [rootEdgeL, rootEdgeR]) V.++  ((V.take (edgeIndex - 1) edgeVect) V.++ (V.drop edgeIndex edgeVect))
         newVertexVect = V.snoc vertexVect rootVertex
         fglTree = tree2FGL (newVertexVect, newEdgeVect) leafNames
+    -}
+    let fglTree = convertToDirectedGraphText leafNames outGroup inTree
     in
+    --trace ("ConverttoNewick in-vertices in-edges" ++ (show $ length inVertexVect ) ++ " "  ++ (show $ V.toList inVertexVect ) ++ "\n" ++ (show $ length vertexVect ) ++ " "  ++ (show vertexVect ) ++ "\n" ++ (show $ length edgeVect ) ++ " " ++ show edgeVect ++ "\n" ++ show fglTree) 
     PP.fglList2ForestEnhancedNewickString [fglTree] True
+    
   
 -- | getEdgeRootIndex takes edge Vect, Index, and determines edges from root
 getEdgeRootIndex :: Int -> Int -> V.Vector Edge -> (Int, Edge)
@@ -171,8 +275,8 @@ getEdgeRootIndex edgeIndex outgroup edgeVect =
 
 
 -- | convertToNewick wrapper to remove double commas
-convertToNewick :: V.Vector String -> Int -> Tree -> String
-convertToNewick leafNames outGroup wagTree = removeCrap $ convertToNewickGuts leafNames outGroup wagTree
+convertToNewick' :: V.Vector String -> Int -> Tree -> String
+convertToNewick' leafNames outGroup wagTree = removeCrap $ convertToNewickGuts leafNames outGroup wagTree
 
 -- | removeDoubleCommas removes second of double comas ",," -> ","
 -- this a hack to fix problem in convertToNewick

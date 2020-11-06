@@ -167,7 +167,7 @@ showGraph inGraph =
 -- of fgl graphs with Text labels for nodes and edges or error if not ForestEnhancedNewick or Newick formats.
 forestEnhancedNewickStringList2FGLList :: T.Text -> [P.Gr T.Text Double]
 forestEnhancedNewickStringList2FGLList fileText =
-    if T.null fileText then error "Empty file string input in getForestEnhancedNewickList"
+    if T.null fileText then []
     else
         let feNewickList = fmap (removeNewickSpaces . removeNewickComments) (divideGraphText fileText)
         in
@@ -615,13 +615,14 @@ removeDuplicateSubtreeText inRep netNodeList fglGraph writeEdgeWeight =
         -- isFound = T.isInfixOf nodeText inRep -- (T.pack "(4:1.0)Y#H1") inRep
     in
     -- trace ("Removing ? " ++ show isFound ++ " " ++ show nodeText ++ " " ++ show nodeLabel ++ " from " ++ show inRep ++ " in list (" ++ show (length textList) ++ ") " ++ show textList) (
+
     -- since root cannot be network neither first nor last pieces should be empty
     if T.null (head textList) || T.null (last textList) then error ("Text representation of graph is incorrect with subtree:\n" ++ T.unpack nodeText
       ++ " first or last in representation:\n " ++ T.unpack inRep)
     --else if length textList == 1 then error ("Text representation of graph is incorrect with subtree:\n" ++ T.unpack nodeText
     --  ++ " not found in representation:\n " ++ T.unpack inRep)
     else if length textList == 2 then
-        trace "Warning: Network subtree present only once--extraneous use of \'#\' perhaps--"
+        trace "Warning: If not a tree--Network subtree present only once--extraneous use of \'#\' perhaps--"
         inRep
     else -- should be minimum of 3 pieces (two occurences of subtree text removed) is subtree found 2x and not sister to itself (which should never happen)
       -- edge weights (if they occur) remain the beginning of each text list (after the first)
@@ -652,6 +653,7 @@ fgl2FEN writeEdgeWeight fglGraph =
   if G.isEmpty fglGraph then error "Empty graph to convert in fgl2FEN"
   else
     -- get forest roots
+    --trace ("fgl2FEN: " ++ show fglGraph) (
     let numRoots = getRoots fglGraph (G.labNodes fglGraph)
         rootGraphSizeList = fmap (subTreeSize fglGraph 0 . (:[])) numRoots
         rootAndSizes = zip rootGraphSizeList numRoots
@@ -679,18 +681,20 @@ fgl2FEN writeEdgeWeight fglGraph =
         wholeRep' = removeDuplicateSubtreeText wholeRep networkLabelledNodeList fglGraph writeEdgeWeight
     in
     -- trace ("fgl2FEN " ++ show rootOrder ++ "->" ++ show fenTextList) (
-    if length fenTextList == 1 then wholeRep' -- just a single tree/network
+    -- can add T.filter (/= '\n') to remove teh newlines
+    if length fenTextList == 1 then  wholeRep' -- just a single tree/network
     else T.snoc (T.cons '<' wholeRep') '>'
-    -- )
+    --)
 
 
 -- | fglList2ForestEnhancedNewickString takes FGL representation of forest and returns
 -- list of Forest Enhanced Newick as a single String
 fglList2ForestEnhancedNewickString :: (Show a) => [P.Gr T.Text a] -> Bool -> String
 fglList2ForestEnhancedNewickString inFGLList writeEdgeWeight =
-  if null inFGLList then "\n"
-  else
-    let forestTextList = (`T.append` T.singleton '\n') <$> parmap rdeepseq (fgl2FEN writeEdgeWeight) inFGLList
+  --if null inFGLList then "\n"
+  --else
+    let forestTextList = parmap rdeepseq (fgl2FEN writeEdgeWeight) inFGLList
+        --forestTextList = (`T.append` T.singleton '\n') <$> parmap rdeepseq (fgl2FEN writeEdgeWeight) inFGLList
         forestListString = T.unpack $ T.concat forestTextList
     in
     forestListString
@@ -708,7 +712,7 @@ component2Newick fglGraph writeEdgeWeight (index, label) =
     -- "naked" root
     if null middlePartList then T.concat [T.singleton '(', label, T.singleton ')', T.singleton ';']
     -- single output edge
-    else if length middlePartList == 1 then T.concat [T.singleton '(', head middlePartList, T.singleton ')', label, T.singleton ';']
+    else if length middlePartList == 1 then T.concat [T.singleton '(', head middlePartList, T.singleton ')', label] --, T.singleton ';']
     else
       let middleText = T.intercalate (T.singleton ',') middlePartList
       in
@@ -720,7 +724,7 @@ component2Newick fglGraph writeEdgeWeight (index, label) =
 makeLabel :: Maybe T.Text -> T.Text
 makeLabel = fromMaybe T.empty
 
--- | getNewick takes an edge of a graph and either cretes the text if a leaf
+-- | getNewick takes an edge of a graph and either creates the text if a leaf
 -- or recurses down tree if has descendents, adding  commas, outper parens, labels, and edge weights if they exist.
 -- need to filter redundant subtrees later at the forest level (Can have shared node between rooted components)
 getNewick :: (Show a) => P.Gr T.Text a -> Bool -> [G.LEdge a] -> [T.Text]
@@ -735,12 +739,15 @@ getNewick fglGraph writeEdgeWeight inEdgeList
   if null outEdges then
     let leafLabel = G.lab fglGraph curNodeIndex
     in
+    --trace ("Leaf " ++ (show curNodeIndex) ++ " " ++ (T.unpack $ fromJust leafLabel)) (
     if isNothing leafLabel then error "Leaf without label in getNewick"
     else
       let newLabelList = if writeEdgeWeight then [T.concat [fromJust leafLabel, T.singleton ':', T.pack $ show edgeLabel]] else [fromJust leafLabel]
       in
       if length inEdgeList == 1 then newLabelList
       else [T.concat $ newLabelList ++ [T.singleton ','] ++ getNewick fglGraph writeEdgeWeight (tail inEdgeList)]
+      --)
+
   -- not a leaf, recurse
   else
     let nodeLabel = makeLabel $ G.lab fglGraph curNodeIndex
@@ -754,7 +761,7 @@ getNewick fglGraph writeEdgeWeight inEdgeList
       in
       if not writeEdgeWeight then T.concat [T.singleton '(', middleText, T.singleton ')', nodeLabel]  : getNewick fglGraph writeEdgeWeight  (tail inEdgeList)
       else T.concat [T.singleton '(', middleText, T.singleton ')', nodeLabel, T.singleton ':', T.pack $ show edgeLabel] : getNewick fglGraph writeEdgeWeight  (tail inEdgeList)
-
+        
 -- |  stringGraph2TextGraph take P.Gr String a and converts to P.Gr Text a
 stringGraph2TextGraph :: P.Gr String b -> P.Gr T.Text b
 stringGraph2TextGraph inStringGraph =
