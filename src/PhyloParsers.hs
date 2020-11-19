@@ -593,7 +593,7 @@ getRoots inGraph nodeList =
   else
     let firstNode@(index, _) = head nodeList
     in
-    if (G.indeg inGraph index == 0) then firstNode : getRoots inGraph (tail nodeList)
+    if G.indeg inGraph index == 0 then firstNode : getRoots inGraph (tail nodeList)
     else getRoots inGraph (tail nodeList)
 
 -- | removeDuplicateSubtreeText removes duplicate subtree textx that come from indegree > 1 nodes
