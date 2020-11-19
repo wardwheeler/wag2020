@@ -260,7 +260,7 @@ convertToNewick leafNames outGroup inTree =
     let fglTree = convertToDirectedGraphText leafNames outGroup inTree
     in
     --trace ("ConverttoNewick in-vertices in-edges" ++ (show $ length inVertexVect ) ++ " "  ++ (show $ V.toList inVertexVect ) ++ "\n" ++ (show $ length vertexVect ) ++ " "  ++ (show vertexVect ) ++ "\n" ++ (show $ length edgeVect ) ++ " " ++ show edgeVect ++ "\n" ++ show fglTree) 
-    PP.fglList2ForestEnhancedNewickString [fglTree] True
+    PP.fglList2ForestEnhancedNewickString [fglTree] True False
     
   
 -- | getEdgeRootIndex takes edge Vect, Index, and determines edges from root
