@@ -26,7 +26,14 @@ executable wag2020
                 -O2
                 -static
                 -XBangPatterns
-                -fwrite-ide-info
+                -- for weeder
+ --               -fwrite-ide-info
+                -- for static linux
+                -optl-static -optl-pthread
+
+-- delete these for OSX for linux static binaries
+--  cc-options: -static
+--  ld-options: -static -pthread
 
 --From matrices package (so 0 based)
 
