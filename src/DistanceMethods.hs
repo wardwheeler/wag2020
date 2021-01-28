@@ -214,12 +214,15 @@ getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert otherVert
 
 -- | addTaxaNJ recursively calls pickNearestUpdateMatrix untill all internal nodes are created
 -- recursively called until all (n - 2) internal vertices are created.
+
+-- need to make last edge with correct length not self edge for soime reaslon
 addTaxaNJ :: M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
 addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
   if V.length vertexVect == (2 * numLeaves) - 2 then
-    let (iMin, jMin, _) = getMatrixMinPairTabu (makeDMatrix littleDMatrix vertInList) vertInList
+    let (iMin, jMin, _) = getMatrixMinPairTabu  littleDMatrix  vertInList   --(makeDMatrix littleDMatrix vertInList) vertInList
         lastEdge = (iMin, jMin, littleDMatrix M.! (iMin, jMin))
     in
+    trace ("last edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show littleDMatrix) ++ " " ++ show lastEdge)
     ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
     -- more to add
   else
