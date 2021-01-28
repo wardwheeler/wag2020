@@ -198,9 +198,7 @@ pickNearestUpdateMatrixNJ littleDMatrix  vertInList
           newEdgeI = (newVertIndex, iMin, diMinNewVert)
           newEdgeJ = (newVertIndex, jMin, djMinNewVert)
         in
-        if newEdgeI == newEdgeJ then error ("Created edges are equal " ++ show newEdgeI)
-        -- (newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
-        else (newLittleDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
+        (newLittleDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
         )
 
 -- | getNewDist get ditance of new vertex to existing vertices
