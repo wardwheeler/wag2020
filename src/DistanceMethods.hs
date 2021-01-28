@@ -91,6 +91,7 @@ neighborJoining leafNames distMatrix outgroup =
             newickString = convertToNewick leafNames outgroup nJTree
             treeCost = getTreeCost nJTree
         in
+        trace (show nJTree)
         (newickString ++ "[" ++ (show treeCost) ++ "];", nJTree, treeCost, finalLittleDMatrix)
         )
 
@@ -133,6 +134,7 @@ makeDMatrix inObsMatrix vertInList  =
   else 
       V.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..((M.rows inObsMatrix) - 1)]
 
+
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
 -- assumes matrix is square and symmetrical
 -- makes values Infinity if already added
@@ -154,6 +156,7 @@ makeDMatrix' inObsMatrix vertInList row column updateList
     in
     makeDMatrix' inObsMatrix vertInList row (column + 1) ((row, column, bigDij) : updateList)
 
+
 -- | pickNearestUpdateMatrix takes d and D matrices, pickes nearest based on D
 -- then updates d and D to reflect new node and distances created
 -- updates teh column/row for vertices that are joined to be infinity so
@@ -162,10 +165,10 @@ pickNearestUpdateMatrixNJ :: M.Matrix Double -> [Int] -> (M.Matrix Double, Verte
 pickNearestUpdateMatrixNJ littleDMatrix  vertInList
   | M.null littleDMatrix = error "Null d matrix in pickNearestUpdateMatrix"
   | otherwise =
-    let (iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix littleDMatrix vertInList) vertInList 
-    --let (iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix' littleDMatrix vertInList 0 0 []) vertInList 
+    --let (iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix littleDMatrix vertInList) vertInList 
+    let (iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix' littleDMatrix vertInList 0 0 []) vertInList 
     in
-    -- trace ("First pair " ++ show (iMin, jMin, distIJ)) (
+    trace ("First pair " ++ show (iMin, jMin, distIJ)) (
     if distIJ == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
     else
         let -- new vertex is size of distance matrix (0 indexed)
@@ -195,9 +198,10 @@ pickNearestUpdateMatrixNJ littleDMatrix  vertInList
           newEdgeI = (newVertIndex, iMin, diMinNewVert)
           newEdgeJ = (newVertIndex, jMin, djMinNewVert)
         in
+        if newEdgeI == newEdgeJ then error ("Created edges are equal " ++ show newEdgeI)
         -- (newLittleDMatrix, newBigDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
-        (newLittleDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
-        
+        else (newLittleDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
+        )
 
 -- | getNewDist get ditance of new vertex to existing vertices
 getNewDist :: M.Matrix Double -> Double-> Int -> Int -> Double -> Double -> Int -> Double
@@ -228,7 +232,7 @@ addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
     --trace (M.showMatrixNicely newLittleDMatrix ++ "\n" ++ M.showMatrixNicely bigDMatrix)
     let progress = show  ((fromIntegral (100 * (V.length vertexVect - numLeaves))/fromIntegral (numLeaves - 2)) :: Double)
     in
-    trace (takeWhile (/='.') progress ++ "%") 
+    trace (takeWhile (/='.') progress ++ "%" ++ (show (newVertexVect, newEdgeVect))) 
     addTaxaNJ newLittleDMatrix numLeaves (newVertexVect, newEdgeVect) newVertInList
     
 
