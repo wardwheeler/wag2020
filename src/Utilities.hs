@@ -466,7 +466,7 @@ betterRandomList n maxValue= unsafePerformIO $ do
 -- | Subtrace vector subtracts elements of vector a from vector b
 -- is thins n^2 ?
 -- edges are directed
-subtractVector :: V.Vector Edge -> V.Vector Edge -> V.Vector Edge
+subtractVector :: (Eq a) => V.Vector a -> V.Vector a -> V.Vector a
 subtractVector a b
   | V.null a = b
   | V.null b = V.empty
