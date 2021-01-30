@@ -220,11 +220,16 @@ addTaxaNJ :: M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
 addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
   if V.length vertexVect == (2 * numLeaves) - 2 then
     let --(iMin, jMin, _) = getMatrixMinPairTabu  (makeDMatrix littleDMatrix vertInList) vertInList
+        {-
         last2 = subtractVector (V.fromList vertInList) vertexVect
         iMin = last2 V.! 0 
         jMin = last2 V.! 1
+        -}
+        iMin = vertexVect V.! ((V.length vertexVect) - 1)
+        jMin = vertexVect V.! ((V.length vertexVect) - 2)
         lastEdge = (iMin, jMin, littleDMatrix M.! (iMin, jMin))
     in
+    --trace (show last2 ++ " from " ++ show vertexVect)
     -- trace ("last edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show littleDMatrix) ++ " edge: " 
     --  ++ show lastEdge ++ " vertInList: " ++ show vertInList)
     ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
