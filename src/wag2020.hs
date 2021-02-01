@@ -68,18 +68,19 @@ import           System.Environment
 import           System.IO
 import           Text.ParserCombinators.Parsec
 import qualified Control.Monad.Parallel            as CMP
-import qualified Data.Graph.Inductive.Graph        as G
-import qualified Data.Graph.Inductive.PatriciaTree as P
+-- import qualified Data.Graph.Inductive.Graph        as G
+-- import qualified Data.Graph.Inductive.PatriciaTree as P
 import qualified Data.GraphViz                     as GV
 import           Data.GraphViz.Printing
 import qualified Data.Number.Transfinite           as NT
-import qualified Data.Set                          as Set
+--import qualified Data.Set                          as Set
 import qualified Data.Text.Lazy                    as T
 import           Immutable.Shuffle
 import qualified SymMatrix                         as M
 import           DistanceMethods
-import           Types
+--import           Types
 import           Utilities
+import           ParseCommands
 -- import Control.Monad (replicateM)
 
 
@@ -92,87 +93,6 @@ writeFiles stub typeString number fileStuffList =
   else do
     writeFile (stub ++ "." ++ show number ++ "." ++ typeString) (head fileStuffList)
     writeFiles stub typeString (number + 1) (tail fileStuffList)
-
--- | removeCommenet removes all after and including double dash "--"
-removeComments :: String -> String
-removeComments inLine
-  | null inLine = []
-  | length inLine == 1 = inLine
-  | otherwise =
-    let firstElem = head inLine
-        secondElem  = inLine !! 1
-    in
-    if not ((firstElem == '-') && (secondElem  == '-'))  then firstElem : removeComments (tail inLine)
-    else []
-
--- | cleanUpParamFile removes comment lines and space etc from input parameter file
--- retuns clean lines as lists of string
-cleanUpParamFile :: String -> [String]
-cleanUpParamFile inFile =
-  if null inFile then error "Empty input file to clean"
-  else
-      let inLines = lines inFile
-          nonCommentLines = filter (/= "") $ fmap (filter (/= ' ') . removeComments) inLines
-      in
-      nonCommentLines
-
--- | getOption scanns input list of command strings for the string input and returns that line
--- for later parsing, converts all to lower caser so case invariant later
--- uses dataFiles String as default for stub if not specified
-getOption :: String -> String -> [String] -> String
-getOption optionString dataFileString commandLines =
-  if null commandLines then
-    -- return defaults or error
-   case optionString of
-        "input"             -> error "No input data file specified"
-        "stub"              -> dataFileString
-        "output"            -> dataFileString ++ ".tre"
-        "firstPairChoice"   -> "closest"
-        "outgroup"          -> []
-        "additionSequence"  -> "best"
-        "refinement"        -> "none"
-        "buildSet"          -> "best"
-        "outputSet"         -> "best"
-        "keepSet"           -> "first"
-        "excludedTaxa"      -> []
-        _                   -> error ("Option " ++ optionString ++ " not specified and has no default")
-  else -- case invariant
-      let firstLine = head commandLines
-          parameterString = tail $ dropWhile (/= ':') firstLine
-          parameterStringLC = T.unpack $ T.toLower $ T.pack parameterString
-          commandString = T.toLower $ T.pack $ takeWhile (/= ':') firstLine
-          inOption = T.toLower $ T.pack optionString
-      in
-      if inOption == commandString then
-          if optionString `elem` ["input","output","stub","outgroup","excludedTaxa"] then parameterString
-          else  parameterStringLC
-      else getOption optionString dataFileString (tail commandLines)
-
--- | processParamFile takes input Wagner script file and returns run parameters
--- as a list if string in order
--- input Data File, firstPairMethod, outgroup, additionSeqeunce, refinement, buildSelect, saveMethod, stub,
--- outputTreeFile, keep method
-processParamFile :: String -> [String]
-processParamFile fileString =
-  if null fileString then error "Empty parameter file"
-  else
-      let commandLines      = cleanUpParamFile fileString
-          inputFile         = filter (/= '"') $ getOption "input" "" commandLines
-          firstPair         = getOption "firstPairChoice" inputFile commandLines
-          outgroup          = getOption "outgroup" inputFile commandLines
-          additionSequence  = getOption "additionSequence" inputFile commandLines
-          refinement        = getOption "refinement" inputFile commandLines
-          buildSelect       = getOption "buildSet" inputFile commandLines
-          saveMethod        = getOption "outputSet" inputFile commandLines
-          stub              = filter (/= '"') $ getOption "stub" inputFile commandLines
-          outputTreeFile    = getOption "output" inputFile commandLines
-          keepMethod        = getOption "keepSet" inputFile commandLines
-          excludedTaxa      = getOption "excludedTaxa" inputFile commandLines
-      in
-      -- check for unset options-> throw error
-      if null inputFile then error "No input file specified"
-
-      else [inputFile, firstPair, outgroup, additionSequence, refinement, buildSelect, saveMethod, stub, outputTreeFile, keepMethod,excludedTaxa]
 
 -- |  getDeletedTaxa returns list of taxa to delete from file exludedTaxaFileName
 getDeletedTaxa :: String -> IO [String]
@@ -249,12 +169,13 @@ main =
   do
     -- Process arguments
     args <- getArgs
-    if length args /= 1 then error "Need to specify a single parameter file"
-    else hPutStrLn stderr ("Openning parameter file " ++ head args)
+    if length args == 0 then error "Need to specify a single parameter file or commandline options"
+    else if length args == 1 then hPutStrLn stderr ("Openning parameter file " ++ head args)
+    else hPutStrLn stderr ("Processing commandline options: " ++ concat (fmap (++ "\n") args))
 
     -- Get params from input file
-    paramFile <- readFile (head args)
-    let paramList = processParamFile paramFile
+    paramFile <- if (length args == 1) then readFile (head args) else (return "")
+    let paramList = if length args == 1 then processParamString paramFile True else processParamString (concat $ intersperse " " args) False
     let dataFile = head paramList
     let firstPairMethod = paramList !! 1 -- should be closest, furthest, random
     let outgroup = filter (/= '"') $ paramList !! 2

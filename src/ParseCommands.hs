@@ -39,15 +39,11 @@ Todo:
 
 -}
 
-module ParseCommands (processCommands) where
+module ParseCommands (processParamString) where
 
 import qualified Data.Text.Lazy         as T
-import           Debug.Trace
+-- import           Debug.Trace
 import           Data.Array
-
--- | function for first element of triple
-fst3 :: (a,b,c) -> a
-fst3 (d,_,_) = d
 
 -- | editDistance is a naive edit distance between two lists
 -- takes two  lists and returns edit distance
@@ -70,7 +66,11 @@ editDistance xs ys = table ! (m,n)
 
 -- | allowedCommandList list of allowable commands
 allowedCommandList :: [String]
-allowedCommandList = ["reconcile", "compare", "threshold", "outformat", "outfile", "connect", "edgelabel"]
+allowedCommandList = ["input","stub", "output", "firstpairchoice","outgroup",
+                    "additionsequence" ,"refinement" ,"buildset" ,"outputset" ,"keepset","excludedtaxa"]
+
+-- allowedOptionsList :: [String]
+-- allowedOptionsList = ["closest","best","first","random"]
 
 -- | getBestMatch compares input to allowable commands and checks if in list and if not outputs
 -- closest match
@@ -95,161 +95,91 @@ getCommandErrorString noMatchList =
         in
         firstError ++ getCommandErrorString (tail noMatchList)
 
--- | processCommands takes a list of strings and returns values of commands for proram execution
--- including defaults
--- checks commands for misspellings
-processCommands :: [String] -> (String, String, Int, Bool, Bool, String, String, [String])
-processCommands inList =
-    if null inList then error ("\n\nError--No input parameters.\nParameters that can be set:"
-        ++ "\n\tReconcile:eun|cun|strict|majority|Adams "
-        ++ "\n\tCompare:combinable|identity "
-        ++ "\n\tThreshold:0-100 (must be integer)"
-        ++ "\n\tOutFormat:Dot|FENewick"
-        ++ "\n\tConnect:True|False"
-        ++ "\n\tEdgeLabel:True|False"
-        ++ "\n\tOutFile:filename"
-        ++ "\n\tInput files (may include wildcards) without preceeding \"option=\""
-        ++ "\n\tRequires at least a single input graph file (and at least two input graphs)."
-        ++ "\n\tDefault values reconcile=EUN, compare=combinable threeshold=0, outformat=dot, outfile=euncon.out\n\n")
-    else
-        let inTextList = fmap T.pack inList
-            inTextListLC = fmap T.toLower inTextList
-            commandList = filter (T.any (== ':')) inTextListLC
-            stringCommands = fmap (T.unpack . T.takeWhile (/= ':')) commandList
-            (editCostList, matchList) = unzip $ fmap (getBestMatch (maxBound :: Int ,"no suggestion") allowedCommandList) stringCommands
-            commandMatch = zip3 editCostList stringCommands matchList
-            notMatchedList = filter ((>0).fst3) commandMatch
-            inputFileList = getInputFileNames inTextList
-            method = getMethod inTextListLC
-            compareMethod = getCompareMethod inTextListLC
-            connect = getConnect inTextListLC
-            edgeLabel = getEdgeLabel inTextListLC
-            threshold = if method == "cun" then 0 
-                        else if method == "strict" then 100 
-                        else getThreshold inTextListLC
-            outFormat = getOutputFormat inTextListLC
-            outFile =  getOutputFileName (zip inTextListLC inTextList)
+
+-- | removeCommenet removes all after and including double dash "--"
+removeComments :: String -> String
+removeComments inLine
+  | null inLine = []
+  | length inLine == 1 = inLine
+  | otherwise =
+    let firstElem = head inLine
+        secondElem  = inLine !! 1
+    in
+    if not ((firstElem == '-') && (secondElem  == '-'))  then firstElem : removeComments (tail inLine)
+    else []
+
+-- | cleanUpParamFile removes comment lines and space etc from input parameter file
+-- retuns clean lines as lists of string
+cleanUpParamFile :: String -> [String]
+cleanUpParamFile inFile =
+  if null inFile then error "Empty input file to clean"
+  else
+      let inLines = lines inFile
+          nonCommentLines = filter (/= "") $ fmap (filter (/= ' ') . removeComments) inLines
+      in
+      nonCommentLines
+
+-- | getOption scanns input list of command strings for the string input and returns that line
+-- for later parsing, converts all to lower caser so case invariant later
+-- uses dataFiles String as default for stub if not specified
+getOption :: String -> String -> [String] -> String
+getOption optionString dataFileString commandLines =
+  if null commandLines then
+    -- return defaults or error
+   case optionString of
+        "input"             -> error "No input data file specified"
+        "stub"              -> dataFileString
+        "output"            -> dataFileString ++ ".tre"
+        "firstPairChoice"   -> "closest"
+        "outgroup"          -> []
+        "additionSequence"  -> "best"
+        "refinement"        -> "none"
+        "buildSet"          -> "best"
+        "outputSet"         -> "best"
+        "keepSet"           -> "first"
+        "excludedTaxa"      -> []
+        _                   -> error ("Option " ++ optionString ++ " not specified and has no default")
+  else -- case invariant
+      let firstLine = head commandLines
+          parameterString = tail $ dropWhile (/= ':') firstLine
+          parameterStringLC = T.unpack $ T.toLower $ T.pack parameterString
+          commandString = T.toLower $ T.pack $ takeWhile (/= ':') firstLine
+          inOption = T.toLower $ T.pack optionString
+      in
+      if (T.unpack commandString) `notElem` allowedCommandList then
+        let (editCost, bestMatch) = getBestMatch (maxBound :: Int ,"no suggestion") allowedCommandList (T.unpack commandString)
         in
-        if null notMatchedList then
-            trace ("\nInput arguments: " ++ show inList ++ "\nProgram options: " ++ show (method, compareMethod, threshold, connect, edgeLabel, outFormat, outFile, inputFileList))
-            (method, compareMethod, threshold, connect, edgeLabel, outFormat, outFile, inputFileList)
-        else error ("\n\nError(s) in command specification (case insensitive):\n" ++ getCommandErrorString notMatchedList)
+        error ("\n\nError in command specification (case insensitive) unrecognized command:" ++ getCommandErrorString [(editCost, T.unpack commandString, bestMatch)])
+      else if inOption == commandString then
+          if optionString `elem` ["input","output","stub","outgroup","excludedTaxa"] then parameterString
+          else  parameterStringLC
+      else getOption optionString dataFileString (tail commandLines)
+
+-- | processParamFile takes input Wagner script file and returns run parameters
+-- as a list if string in order
+-- input Data File, firstPairMethod, outgroup, additionSeqeunce, refinement, buildSelect, saveMethod, stub,
+-- outputTreeFile, keep method
+processParamString :: String -> Bool -> [String]
+processParamString fileString isFile =
+  if null fileString then error "Empty parameter file"
+  else
+      let commandLines      = if isFile then  cleanUpParamFile fileString else words fileString
+          inputFile         = filter (/= '"') $ getOption "input" "" commandLines
+          firstPair         = getOption "firstPairChoice" inputFile commandLines
+          outgroup          = getOption "outgroup" inputFile commandLines
+          additionSequence  = getOption "additionSequence" inputFile commandLines
+          refinement        = getOption "refinement" inputFile commandLines
+          buildSelect       = getOption "buildSet" inputFile commandLines
+          saveMethod        = getOption "outputSet" inputFile commandLines
+          stub              = filter (/= '"') $ getOption "stub" inputFile commandLines
+          outputTreeFile    = getOption "output" inputFile commandLines
+          keepMethod        = getOption "keepSet" inputFile commandLines
+          excludedTaxa      = getOption "excludedTaxa" inputFile commandLines
+      in
+      -- check for unset options-> throw error
+      if null inputFile then error "No input file specified"
+
+      else [inputFile, firstPair, outgroup, additionSequence, refinement, buildSelect, saveMethod, stub, outputTreeFile, keepMethod,excludedTaxa]
 
 
--- | getInputFileNames returns names not including a parameter ':'
-getInputFileNames :: [T.Text] -> [String]
-getInputFileNames inTextList = T.unpack <$> filter (T.all (/= ':')) inTextList
-
--- | getMethod returns method value or dedfault otherwise
--- assumes in lower case
-getMethod :: [T.Text] -> String
-getMethod inTextList =
-    if null inTextList then trace "Warning: No reconcile specified defaulting to \'eun\'" "eun"
-    else
-        let firstCommand = T.takeWhile (/= ':') $ head inTextList
-            firstOption = T.tail $ T.dropWhile (/= ':') $ head inTextList
-        in
-        if firstCommand == T.pack "reconcile" then
-            let option = T.unpack firstOption
-            in
-            if option == "eun" then "eun"
-            else if option == "cun" then "cun"
-            else if option == "majority" then "majority"
-            else if option == "strict" then "strict"
-            else error ("Reconcile option \'" ++ option ++ "\' not recognized (eun|cun|majority|strict)")
-        else getMethod (tail inTextList)
-
--- | getCompareMethod returns compareMethod value or default otherwise
--- assumes in lower case
-getCompareMethod :: [T.Text] -> String
-getCompareMethod inTextList =
-    if null inTextList then trace "Warning: No compare specified defaulting to \'combinable\'" "combinable"
-    else
-        let firstCommand = T.takeWhile (/= ':') $ head inTextList
-            firstOption = T.tail $ T.dropWhile (/= ':') $ head inTextList
-        in
-        if firstCommand == T.pack "compare" then
-            let option = T.unpack firstOption
-            in
-            if option == "combinable" then "combinable"
-            else if option == "identity" then "identity"
-            else error ("Compare option \'" ++ option ++ "\' not recognized (combinable|identity)")
-        else getCompareMethod (tail inTextList)
-
--- | getConect returns connect value or default otherwise (True|False)
--- assumes in lower case
-getConnect :: [T.Text] -> Bool
-getConnect inTextList =
-    if null inTextList then trace "Warning: No connect value specified defaulting to \'False\'" False
-    else
-        let firstCommand = T.takeWhile (/= ':') $ head inTextList
-            firstOption = T.tail $ T.dropWhile (/= ':') $ head inTextList
-        in
-        if firstCommand == T.pack "connect" then
-            let option = T.unpack firstOption
-            in
-            if option == "true" then True
-            else if option == "false" then False
-            else error ("Connect option \'" ++ option ++ "\' not recognized (True|False)")
-        else getConnect (tail inTextList)
-
--- | getEdgeLabel returns edgeLabel value or default otherwise (True|False)
--- assumes in lower case
-getEdgeLabel :: [T.Text] -> Bool
-getEdgeLabel inTextList =
-    if null inTextList then trace "Warning: No edgeLabel value specified defaulting to \'True\'" True
-    else
-        let firstCommand = T.takeWhile (/= ':') $ head inTextList
-            firstOption = T.tail $ T.dropWhile (/= ':') $ head inTextList
-        in
-        if firstCommand == T.pack "edgelabel" then
-            let option = T.unpack firstOption
-            in
-            if option == "true" then True
-            else if option == "false" then False
-            else error ("EdgeLAbel option \'" ++ option ++ "\' not recognized (True|False)")
-        else getEdgeLabel (tail inTextList)
-
-
--- | getThreshold returns threshold value or default otherwise
--- assumes in lower case
-getThreshold :: [T.Text] -> Int
-getThreshold inTextList =
-    if null inTextList then trace "Warning: No threshold specified defaulting to \'0\'"  0 :: Int
-    else
-        let firstCommand = T.takeWhile (/= ':') $ head inTextList
-            firstOption = T.tail $ T.dropWhile (/= ':') $ head inTextList
-        in
-        if firstCommand == T.pack "threshold" then read (T.unpack firstOption) :: Int
-        else getThreshold (tail inTextList)
-
--- | getOutputFormat returns output file format or default otherwise
--- assumes in lower case
-getOutputFormat :: [T.Text] -> String
-getOutputFormat inTextList =
-    if null inTextList then trace "Warning: No output format specified defaulting to \'dot\'" "dot"
-    else
-        let firstCommand = T.takeWhile (/= ':') $ head inTextList
-            firstOption = T.tail $ T.dropWhile (/= ':') $ head inTextList
-        in
-        if firstCommand == T.pack "outformat" then
-            let outFormat = T.unpack firstOption
-            in
-            if outFormat == "dot" then "dot"
-            else if outFormat == "fenewick" then "fennewick"
-            else error ("Output format \'" ++ outFormat ++ "\' not recognized (dot|FENewickewick)")
-        else getOutputFormat (tail inTextList)
-
--- | getOutputFileName returns output file name or default otherwise
--- assumes in lower case for command, uses pair so no case convewrsino in files name
-getOutputFileName :: [(T.Text, T.Text)] -> String
-getOutputFileName inTextPairList =
-    if null inTextPairList then trace "Warning: No output file name specified defaulting to \'euncon.out\'" "euncon.out"
-    else
-        let (textListLC, textList) = head inTextPairList
-            firstCommand = T.takeWhile (/= ':') textListLC
-            firstOption = T.tail $ T.dropWhile (/= ':') textList
-        in
-        if firstCommand == T.pack "outfile" then T.unpack firstOption
-        else getOutputFileName (tail inTextPairList)
 

@@ -29,7 +29,7 @@ executable wag2020
                 -- for weeder
  --               -fwrite-ide-info
                 -- for static linux
-                -optl-static -optl-pthread
+ --               -optl-static -optl-pthread
 
 -- delete these for OSX for linux static binaries
 --  cc-options: -static
@@ -56,6 +56,7 @@ executable wag2020
                 , logfloat
                 , monad-parallel
                 , sort
+                , array
                 
 
   default-language: Haskell2010
@@ -66,3 +67,4 @@ executable wag2020
                 , Utilities 
                 , Wagner
                 , PhyloParsers
+                , ParseCommands
