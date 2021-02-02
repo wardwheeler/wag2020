@@ -492,6 +492,7 @@ getMinRowDistMatrix :: M.Matrix Double -> [Int] -> (Int, Double) -> Int -> Int -
 getMinRowDistMatrix distMatrix tabuList minPair@(minCol, minVal) curColumn row =
   if curColumn == V.length (distMatrix V.! row) then (row, minCol, minVal)
   else if row `elem` tabuList then (-1,-1, NT.infinity)
+  else if curColumn == row then getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
   else if curColumn `elem` tabuList then getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
   else
     let firstVal = distMatrix M.! (row, curColumn)

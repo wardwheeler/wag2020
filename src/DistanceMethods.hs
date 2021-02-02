@@ -220,18 +220,20 @@ addTaxaNJ :: M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
 addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
   if V.length vertexVect == (2 * numLeaves) - 2 then
     let --(iMin, jMin, _) = getMatrixMinPairTabu  (makeDMatrix littleDMatrix vertInList) vertInList
-        {-
         last2 = subtractVector (V.fromList vertInList) vertexVect
         iMin = last2 V.! 0 
         jMin = last2 V.! 1
-        -}
+        {-This is wrong--not last two
         iMin = vertexVect V.! ((V.length vertexVect) - 1)
         jMin = vertexVect V.! ((V.length vertexVect) - 2)
+        -}
         lastEdge = (iMin, jMin, littleDMatrix M.! (iMin, jMin))
     in
-    --trace (show last2 ++ " from " ++ show vertexVect)
-    -- trace ("last edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show littleDMatrix) ++ " edge: " 
-    --  ++ show lastEdge ++ " vertInList: " ++ show vertInList)
+    {-
+    trace (show last2 ++ " from " ++ show vertexVect ++ "\nlast edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show littleDMatrix) 
+      ++ " edge: " 
+      ++ (show lastEdge) ++ " vertInList: " ++ show vertInList)
+      -}
     ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
     -- more to add
   else
@@ -250,9 +252,18 @@ addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
 addTaxaWPGMA :: M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
 addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
   if V.length vertexVect == (2 * numLeaves) - 2 then
-    let (iMin, jMin, _) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
+    let --(iMin, jMin, _) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
+        last2 = subtractVector (V.fromList vertInList) vertexVect
+        iMin = last2 V.! 0 
+        jMin = last2 V.! 1
         lastEdge = (iMin, jMin, distMatrix M.! (iMin, jMin))
     in
+    {-
+    trace ((show last2) ++ " from " ++ show vertexVect ++ "\nlast edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show distMatrix) 
+      ++ " last edge: " 
+      ++ (show lastEdge) ++ " vertInList: " ++ (show vertInList) 
+      ++ " all edges " ++ show (edgeVect `V.snoc` lastEdge))
+      -}
     ((vertexVect, edgeVect `V.snoc` lastEdge), distMatrix)
 
   else -- building
@@ -275,7 +286,7 @@ pickUpdateMatrixWPGMA :: M.Matrix Double -> [Int] -> (M.Matrix Double, Vertex, E
 pickUpdateMatrixWPGMA distMatrix  vertInList =
     if M.null distMatrix then error "Null d matrix in pickNearestUpdateMatrix"
     else
-        let (iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
+        let (iMin, jMin, dij) = getMatrixMinPairTabu distMatrix vertInList  -- (-1, -1, NT.infinity) 0 0
         in
         --trace ("First pair " ++ show (iMin, jMin, dij)) (
         if dij == NT.infinity then error "No minimum found in pickNearestUpdateMatrix"
