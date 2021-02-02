@@ -700,12 +700,12 @@ component2Newick :: (Show a) => P.Gr T.Text a -> Bool -> Bool -> G.LNode T.Text 
 component2Newick fglGraph writeEdgeWeight writeNodeLable (index, label) =
   if G.isEmpty fglGraph then error "Empty graph to convert in component2Newick"
   else
-    -- start with root (no in edge weight)
+    -- start with root (no in edge weight) issue at root not seeing multiple components properly
     let -- preorder traversal
-        middlePartList = getNewick fglGraph writeEdgeWeight writeNodeLable (G.out fglGraph index)
+        middlePartList = concat $ fmap (getNewick fglGraph writeEdgeWeight writeNodeLable) (fmap (replicate 1) (G.out fglGraph index))
         label' = if writeNodeLable then label else T.empty -- trivial trees or write node name
     in
-    --trace ("MPL " ++ show middlePartList ++ " " ++ show (G.out fglGraph index)) (
+    -- trace ("MPL (" ++ (show $ length middlePartList) ++ ") " ++ show middlePartList ++ " " ++ show (G.out fglGraph index)) (
     -- "naked" root
     if null middlePartList then T.concat [T.singleton '(', label, T.singleton ')', T.singleton ';']
     -- single output edge
@@ -715,7 +715,7 @@ component2Newick fglGraph writeEdgeWeight writeNodeLable (index, label) =
       let middleText = T.intercalate (T.singleton ',') middlePartList
       in
       T.concat [T.singleton '(', middleText, T.singleton ')', label', T.singleton ';']
-    
+    --)
 
 
 -- | makeLabel takes Maybe T.Text and retuns T.empty if Nothing, Text otherwise

@@ -37,6 +37,8 @@ Todo:
   from input file?
   add edit distance to commands for error
 
+  filter non-prtintable crap charcaters
+
 -}
 
 module ParseCommands (processParamString) where
