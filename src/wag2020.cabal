@@ -26,6 +26,7 @@ executable wag2020
                 -O2
                 -static
                 -XBangPatterns
+                -rtsopts
                 -- for weeder
  --               -fwrite-ide-info
                 -- for static linux
