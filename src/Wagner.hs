@@ -198,9 +198,10 @@ getRandomAdditionSequence leafNames distMatrix outgroup initiaLeavesToAdd =
   let thisTree = makeTreeFromOrder distMatrix initialTree nOTUs nOTUs leavesToAdd
       -- (_, edgeVect) = fst thisTree
       treeCost = getTreeCost $ fst thisTree -- V.sum $ V.map getEdgeCost edgeVect
-      newickTree = convertToNewick leafNames outgroup (fst thisTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
+      newickTree = convertToNewick leafNames outgroup (fst thisTree)  
+      newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
   in
-  (newickTree, fst thisTree, treeCost, snd thisTree)
+  (newickTree', fst thisTree, treeCost, snd thisTree)
 
 -- | doWagnerS takes user options and produces the Wagner tree methods desired (best, asis, or random)
 -- outputs newick rep list
@@ -212,17 +213,19 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
      let wagnerResult = calculateWagnerTrees distMatrix firstPairMethod
          -- (_, edgeVect) = fst wagnerResult
          treeCost = getTreeCost $ fst wagnerResult --- V.sum $ V.map getEdgeCost edgeVect
-         newickTree = convertToNewick leafNames outgroup (fst wagnerResult) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
+         newickTree = convertToNewick leafNames outgroup (fst wagnerResult)  
+         newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
       in
-      [(newickTree, fst wagnerResult, treeCost, snd wagnerResult)]
+      [(newickTree', fst wagnerResult, treeCost, snd wagnerResult)]
   else if addSequence == "asis" then
       let initialTree = (V.fromList[0, 1],V.fromList [(0, 1, distMatrix M.! (0,1))])
           leavesToAdd = V.fromList [2..(nOTUs-1)]
           asIsResult = makeTreeFromOrder distMatrix initialTree nOTUs nOTUs leavesToAdd
           treeCost = getTreeCost $ fst asIsResult -- V.sum $ V.map getEdgeCost asIsEdges
-          newickTree = convertToNewick leafNames outgroup (fst asIsResult) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
+          newickTree = convertToNewick leafNames outgroup (fst asIsResult) 
+          newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
       in
-      [(newickTree, fst asIsResult, treeCost, snd asIsResult)]
+      [(newickTree', fst asIsResult, treeCost, snd asIsResult)]
   else if head addSequence == 'r' then
       if null replicateSequences then error "Zero replicate additions specified--could be error in configuration file"
       else
@@ -543,8 +546,9 @@ sieveTrees inDelta curBestCost inAddList leafNames outgroup savedTrees =
           (firstDelta, firstTree, firstMatrix) = firstTuple
           newCost = curBestCost - inDelta + firstDelta
           -- checkCost = getTreeCost firstTree
-          newickTree = convertToNewick leafNames outgroup firstTree ++ "[" ++ show newCost ++ "]" ++ ";"
-          newTuple = (newickTree, firstTree, newCost, firstMatrix)
+          newickTree = convertToNewick leafNames outgroup firstTree
+          newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
+          newTuple = (newickTree', firstTree, newCost, firstMatrix)
       in
       if firstDelta > inDelta then sieveTrees inDelta curBestCost  (V.tail inAddList) leafNames outgroup savedTrees
       else
@@ -693,9 +697,10 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
             -- keep whole uEdgeVect so recheck input tree edges
             (newDelta, newTree, newMatrix) = addToEdgeSwapRecurse delta distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex uEdgeVect
             newCost = curBestCost - delta + newDelta
-            newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
+            newickTree = convertToNewick leafNames outGroup newTree
+            newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
         in
-        if newCost < curBestCost then (newickTree, newTree, newCost, newMatrix)
+        if newCost < curBestCost then (newickTree', newTree, newCost, newMatrix)
         else origTree
       else -- internal edge or edge with two OTUs as vertices
           -- check to make sure edges are where they should be can remove later
@@ -706,9 +711,10 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
               uTerminal = (-1,-1,0)
               (newDelta, newTree, newMatrix) = addEdgeToSplitRecurse eEdgeVect uEdgeVect eTerminal uTerminal distMatrix edgesToConnect (delta, inTree, inMatrix)
               newCost = curBestCost - delta + newDelta
-              newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
+              newickTree = convertToNewick leafNames outGroup newTree
+              newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
           in
-          if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
+          if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree', newTree, newCost, newMatrix)
           else origTree
 
 
@@ -727,9 +733,10 @@ reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
       -- take tail of uEdgeVect so not regerate input tree
           (newDelta, newTree, newMatrix) = addToEdgeSwapRecurse delta distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex uEdgeVect -- (V.tail uEdgeVect) -- tail so not hit original tree, leave all to reestimate if necesary
           newCost = curBestCost - delta + newDelta
-          newickTree = convertToNewick leafNames outGroup newTree ++ "[" ++ show newCost ++ "]" ++ ";"
+          newickTree = convertToNewick leafNames outGroup newTree
+          newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
       in
-      if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree, newTree, newCost, newMatrix)
+      if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree', newTree, newCost, newMatrix)
       else origTree
 
 
