@@ -35,6 +35,11 @@ Portability :  portable (I hope)
 
 -}
 
+{-
+Need to integerize costs for swapping very slow on Double values
+  do due spurious precision
+-}
+
 module Wagner (doWagnerS, performRefinement) where
 
 import qualified Data.Vector                       as V 
