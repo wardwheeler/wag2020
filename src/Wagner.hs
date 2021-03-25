@@ -719,7 +719,9 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
               newickTree = convertToNewick leafNames outGroup newTree
               newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
           in
-          if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree', newTree, newCost, newMatrix)
+          if newCost < curBestCost then 
+            --trace ("->" ++ show newCost) 
+            (newickTree', newTree, newCost, newMatrix)
           else origTree
 
 
@@ -741,7 +743,9 @@ reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
           newickTree = convertToNewick leafNames outGroup newTree
           newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
       in
-      if newCost < curBestCost then trace ("->" ++ show newCost) (newickTree', newTree, newCost, newMatrix)
+      if newCost < curBestCost then 
+        --trace ("->" ++ show newCost) 
+        (newickTree', newTree, newCost, newMatrix)
       else origTree
 
 
@@ -788,7 +792,7 @@ splitJoin swapFunction refineType leafNames outGroup edgeVect curTreeWithData@(_
   else
     let firstEdge = V.head edgeVect
         firstSplit = splitTree curTreeMatrix curTree curTreeCost firstEdge
-        !firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
+        firstTree@(_, firstNewTree, firstTreeCost, _) = swapFunction refineType curTreeCost leafNames outGroup firstSplit curTreeWithData
     in
     if firstTreeCost < curTreeCost then splitJoin swapFunction refineType leafNames outGroup (snd firstNewTree) firstTree
     else splitJoin swapFunction refineType leafNames outGroup (V.tail edgeVect) curTreeWithData
@@ -810,7 +814,7 @@ getGeneralSwapSteepestOne refineType swapFunction leafNames outGroup inTreeList 
   if null inTreeList then savedTrees
   else
       trace ("In "++ refineType ++ " Swap (steepest) with " ++ show (length inTreeList) ++ " trees with minimum length " ++ show (minimum $ fmap thd4 inTreeList)) (
-      let !steepTreeList = seqParMap myStrategy (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
+      let steepTreeList = seqParMap myStrategy (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
           steepCost = minimum $ fmap thd4 steepTreeList
       in
       --this to maintina the trajectories untill final swap--otherwise could converge down to single tree prematurely
@@ -834,7 +838,7 @@ getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup 
           -- parallelize here
           splitTreeList = seqParMap myStrategy (splitTree curTreeMatrix curTree curTreeCost) (snd curTree)
           firstTreeList = seqParMap myStrategy (swapFunction refineType curTreeCost leafNames outGroup) splitTreeList
-          !firstTreeList' = filterNewTreesOnCost overallBestCost  (curFullTree : concat (V.toList firstTreeList)) savedTrees -- keepTrees (concat $ V.toList firstTreeList) saveMethod overallBestCost
+          firstTreeList' = filterNewTreesOnCost overallBestCost  (curFullTree : concat (V.toList firstTreeList)) savedTrees -- keepTrees (concat $ V.toList firstTreeList) saveMethod overallBestCost
       in
       -- Work around for negative NT.infinity tree costs (could be dst matrix issue)
       if NT.isInfinite curTreeCost || null firstTreeList' then getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) savedTrees else (
@@ -863,27 +867,27 @@ performRefinement :: String -> String -> String -> V.Vector String -> Int -> Tre
 performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
   | refinement == "none" = [inTree]
   | refinement == "otu" =
-    let !newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        !newTrees' = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwap "otu" reAddTerminals saveMethod keepMethod leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees') then newTrees'
     else
       trace "OTU swap did not find any new trees"
       [inTree]
   | refinement == "spr" =
-    let !newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        !newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        !newTrees'' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees'' = getGeneralSwap "spr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees'') then newTrees''
     else
       trace "SPR swap did not find any new trees"
       [inTree]
   | refinement == "tbr" =
-    let !newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        !newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        !newTrees'' = getGeneralSwapSteepestOne "tbr" doSPRTBRSteep leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
-        !newTrees''' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees'' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+    let newTrees = getGeneralSwapSteepestOne "otu" reAddTerminalsSteep leafNames outGroup [inTree] [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees' = getGeneralSwapSteepestOne "spr" doSPRTBRSteep leafNames outGroup newTrees [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees'' = getGeneralSwapSteepestOne "tbr" doSPRTBRSteep leafNames outGroup newTrees' [([],(V.empty,V.empty), NT.infinity, M.empty)]
+        newTrees''' = getGeneralSwap "tbr" doSPRTBR saveMethod keepMethod leafNames outGroup newTrees'' [([],(V.empty,V.empty), NT.infinity, M.empty)]
     in
     if not (null newTrees''') then newTrees'''
     else

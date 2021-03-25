@@ -30,11 +30,12 @@ executable wag2020
                 -- for weeder
  --               -fwrite-ide-info
                 -- for static linux
- --               -optl-static -optl-pthread
+                -optl-static -optl-pthread
+                -fllvm
 
 -- delete these for OSX for linux static binaries
---  cc-options: -static
---  ld-options: -static -pthread
+  cc-options: -static
+  ld-options: -static -pthread
 
 --From matrices package (so 0 based)
 

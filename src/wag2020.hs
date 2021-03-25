@@ -161,8 +161,6 @@ getRandomReps inString
   | otherwise = read (drop 7 inString) :: Int
 
 
-
-
 -- | main driver
 main :: IO ()
 main =
