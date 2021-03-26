@@ -37,7 +37,8 @@ Portability :  portable (I hope)
 module ParallelUtilities (parmap,
                           seqParMap,
                           getNumThreads,
-                          rnf
+                          rnf,
+                          myStrategy
                           ) where
 
 import           Control.Concurrent

@@ -37,23 +37,22 @@ Portability :  portable (I hope)
 
 module Utilities where
 
-import qualified Data.Vector                       as V 
-import qualified SymMatrix                         as M
-import           Types
-import           Control.Concurrent
-import           Control.Parallel.Strategies
-import           System.IO.Unsafe
-import           Data.List
-import qualified System.Random.Shuffle             as RandS
-import qualified System.Random                     as Rand
-import qualified Data.Set                          as Set
 import qualified Data.Graph.Inductive.Graph        as G
 import qualified Data.Graph.Inductive.PatriciaTree as P
-import qualified Data.Text.Lazy                    as T
-import qualified PhyloParsers                      as PP
-import qualified Data.Number.Transfinite           as NT
-import           Debug.Trace 
+import           Data.List
 import           Data.Maybe
+import qualified Data.Number.Transfinite           as NT
+import qualified Data.Set                          as Set
+import qualified Data.Text.Lazy                    as T
+import qualified Data.Vector                       as V
+import           GeneralUtilities
+import qualified GraphFormatUtilities              as PP
+import           ParallelUtilities
+import qualified SymMatrix                         as M
+import           System.IO.Unsafe
+import qualified System.Random                     as Rand
+import qualified System.Random.Shuffle             as RandS
+import           Types
 
 
 -- | localRoundtakes a double multiplies by 10^precisoin, rounds to integer then divides
@@ -79,55 +78,13 @@ withinEpsilon a b = a == b
   else False
   -}
 
--- | functions for triples
-fst3 :: (a,b,c) -> a
-fst3 (d,_,_) = d
-
-snd3 :: (a,b,c) -> b
-snd3 (_,e,_) = e
-
-thd3 :: (a,b,c) -> c
-thd3 (_,_,e) = e
-
-fst4 :: (a,b,c,d) -> a
-fst4 (e,_,_,_) = e
-
-snd4 :: (a,b,c,d) -> b
-snd4 (_,e,_,_) = e
-
-thd4 :: (a,b,c,d) -> c
-thd4 (_,_,e,_) = e
-
--- Parallel stuff
--- |
--- Map a function over a traversable structure in parallel
--- Preferred over parMap which is limited to lists
--- Add chunking (with arguement) (via chunkList) "fmap blah blah `using` parListChunk chunkSize rseq/rpar"
--- but would have to do one for lists (with Chunk) and one for vectors  (splitAt recusively)
-parmap :: Traversable t => Strategy b -> (a->b) -> t a -> t b
-parmap strat f = withStrategy (parTraversable strat).fmap f
-
--- | seqParMap takes strategy,  if numThread == 1 retuns fmap otherwise parmap and
-seqParMap :: Traversable t => Strategy b -> (a -> b) -> t a -> t b
-seqParMap strat f =
-  if getNumThreads > 1 then parmap strat f
-  else fmap f
-
-myStrategy :: (NFData b) => Strategy b
-myStrategy = rdeepseq
-
--- | getNumThreads gets number of COncurrent  threads
-{-# NOINLINE getNumThreads #-}
-getNumThreads :: Int
-getNumThreads = unsafePerformIO getNumCapabilities
-
 -- | vertex2FGLNode take vertex of Int  and a Vector of Strings (leaf names) and returns
 -- fgl node with type T.Text
 vertex2FGLNode :: V.Vector String -> Vertex -> (Int, T.Text)
-vertex2FGLNode leafVect vertIndex= 
+vertex2FGLNode leafVect vertIndex=
   if vertIndex < V.length leafVect then (vertIndex,  T.pack (leafVect V.! vertIndex))
-  else  
-    let vertexName = "HTU" ++ (show $ vertIndex - (V.length leafVect))
+  else
+    let vertexName = "HTU" ++ show (vertIndex - V.length leafVect)
     in
     (vertIndex, T.pack vertexName)
 
@@ -145,12 +102,12 @@ tree2FGL inTree@(inVertexVect, inEdgeVect) leafNameVect =
 -- reIndexEdges take a list of vertices as integer indices and an edges (Int, Int, Double)
 -- and retuns a new vertex with the indives of the vertex labels
 reIndexEdges :: [Int] -> Edge -> Edge
-reIndexEdges inVertexList (e,u,w) = 
+reIndexEdges inVertexList (e,u,w) =
   if null inVertexList then error "Null inVertexList in reIndexEdges"
-  else 
+  else
     let newE = elemIndex e inVertexList
         newU = elemIndex u inVertexList
-    in 
+    in
     --un safe not testing but list is created from edges first
     (fromJust newE, fromJust newU, w)
 
@@ -163,7 +120,7 @@ makeVertexNames vertList nOTUs leafNames nameHTUs =
       let firstVert = head vertList
       in
       if firstVert < nOTUs then (leafNames V.! firstVert) : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs
-      else if nameHTUs then ("HTU" ++ show firstVert) : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs 
+      else if nameHTUs then ("HTU" ++ show firstVert) : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs
       else "" : makeVertexNames (tail vertList) nOTUs leafNames nameHTUs
 
 -- | directSingleEdge takes an Int and makes that 'e' and otehr vertex as 'u' in edge (e->u)
@@ -241,28 +198,16 @@ convertToDirectedGraphText leafList outgroupIndex inTree =
 -- adds a root and two new edges (deleting root edge)
 -- and calls convert function from PhyloParsers
 convertToNewick :: V.Vector String -> Int -> Tree -> String
-convertToNewick leafNames outGroup inTree =
-  if inTree == emptyTree then error "Empty tree in convertToNewick"
-  else if V.null leafNames then error "Empty leaf names in convertToNewick"
-  else
-    {-
-    let vertexList = nub $ V.toList $ V.concat [inVertexVect, (V.map fst3 inEdgeVect), (V.map snd3 inEdgeVect)]
-        vertexVect = V.fromList $ vertexList
-        edgeVect = inEdgeVect -- V.map (reIndexEdges vertexList) inEdgeVect
-        (edgeIndex, (rootVertL, rootVertR, rootWeight)) = getEdgeRootIndex 0 outGroup edgeVect
-        rootVertex = (V.length vertexVect)
-        rootEdgeL = (rootVertex, rootVertL, rootWeight / 2.0) 
-        rootEdgeR = (rootVertex, rootVertR, rootWeight / 2.0)
-        newEdgeVect = (V.fromList [rootEdgeL, rootEdgeR]) V.++  ((V.take (edgeIndex - 1) edgeVect) V.++ (V.drop edgeIndex edgeVect))
-        newVertexVect = V.snoc vertexVect rootVertex
-        fglTree = tree2FGL (newVertexVect, newEdgeVect) leafNames
-    -}
+convertToNewick leafNames outGroup inTree
+  | inTree == emptyTree = error "Empty tree in convertToNewick"
+  | V.null leafNames = error "Empty leaf names in convertToNewick"
+  | otherwise =
     let fglTree = convertToDirectedGraphText leafNames outGroup inTree
     in
-    --trace ("ConverttoNewick in-vertices in-edges" ++ (show $ length inVertexVect ) ++ " "  ++ (show $ V.toList inVertexVect ) ++ "\n" ++ (show $ length vertexVect ) ++ " "  ++ (show vertexVect ) ++ "\n" ++ (show $ length edgeVect ) ++ " " ++ show edgeVect ++ "\n" ++ show fglTree) 
+    --trace ("ConverttoNewick in-vertices in-edges" ++ (show $ length inVertexVect ) ++ " "  ++ (show $ V.toList inVertexVect ) ++ "\n" ++ (show $ length vertexVect ) ++ " "  ++ (show vertexVect ) ++ "\n" ++ (show $ length edgeVect ) ++ " " ++ show edgeVect ++ "\n" ++ show fglTree)
     PP.fglList2ForestEnhancedNewickString [fglTree] True False
-    
-  
+
+
 -- | getEdgeRootIndex takes edge Vect, Index, and determines edges from root
 getEdgeRootIndex :: Int -> Int -> V.Vector Edge -> (Int, Edge)
 getEdgeRootIndex edgeIndex outgroup edgeVect =
@@ -270,7 +215,7 @@ getEdgeRootIndex edgeIndex outgroup edgeVect =
   else
    let (eVect, uVect, _) = V.head edgeVect
    in
-   if (eVect == outgroup) || (uVect == outgroup) then (edgeIndex, V.head edgeVect) 
+   if (eVect == outgroup) || (uVect == outgroup) then (edgeIndex, V.head edgeVect)
   else getEdgeRootIndex (edgeIndex + 1) outgroup (V.tail edgeVect)
 
 
@@ -489,12 +434,12 @@ getVertexSet edgeVect =
 
 -- | getMinRowDistMatrix distMatrix tabuList
 getMinRowDistMatrix :: M.Matrix Double -> [Int] -> (Int, Double) -> Int -> Int -> (Int, Int, Double)
-getMinRowDistMatrix distMatrix tabuList minPair@(minCol, minVal) curColumn row =
-  if curColumn == V.length (distMatrix V.! row) then (row, minCol, minVal)
-  else if row `elem` tabuList then (-1,-1, NT.infinity)
-  else if curColumn == row then getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
-  else if curColumn `elem` tabuList then getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
-  else
+getMinRowDistMatrix distMatrix tabuList minPair@(minCol, minVal) curColumn row
+  | curColumn == V.length (distMatrix V.! row) = (row, minCol, minVal)
+  | row `elem` tabuList = (-1,-1, NT.infinity)
+  | curColumn == row = getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
+  | curColumn `elem` tabuList = getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
+  | otherwise =
     let firstVal = distMatrix M.! (row, curColumn)
     in
     if firstVal < minVal then getMinRowDistMatrix distMatrix tabuList (curColumn, firstVal) (curColumn + 1) row
@@ -503,10 +448,10 @@ getMinRowDistMatrix distMatrix tabuList minPair@(minCol, minVal) curColumn row =
 
 -- | compareTriples take two triples and orders them based on the smaller thrid element
 minTriples :: (Ord c) => (a,b,c) -> (a,b,c) -> Ordering
-minTriples (_,__,c) (_,_,d) = 
-  if (c < d) then LT 
-  else if (c > d) then GT
-  else EQ
+minTriples (_,__,c) (_,_,d)
+  | c < d = LT
+  | c > d = GT
+  | otherwise = EQ
 
 -- | getMatrixMinPairTabu' takes distMatrix initial integer pair and value
 -- traverses the matrix (skippiong rows and columns in tabuList and return minimum distance and index pair
@@ -516,8 +461,8 @@ minTriples (_,__,c) (_,_,d) =
 getMatrixMinPairTabu :: M.Matrix Double -> [Int] -> (Int, Int, Double)
 getMatrixMinPairTabu distMatrix tabuList =
   if M.null distMatrix then error "Empty matrix in getMatrixPairTabu"
-  else 
-    let minValueList = seqParMap myStrategy (getMinRowDistMatrix distMatrix tabuList (-1, NT.infinity) 0) [0..((M.rows distMatrix) - 1)]
+  else
+    let minValueList = seqParMap myStrategy (getMinRowDistMatrix distMatrix tabuList (-1, NT.infinity) 0) [0..(M.rows distMatrix - 1)]
     in
     minimumBy minTriples minValueList
 

@@ -36,11 +36,14 @@ Portability :  portable (I hope)
 I
 -}
 
+{-# LANGUAGE BangPatterns #-}
+
 module DistanceMethods (neighborJoining, wPGMA, doWagnerS, performWagnerRefinement) where
 
 import qualified Data.Number.Transfinite as NT
 import qualified Data.Vector             as V
 import           Debug.Trace
+import           ParallelUtilities
 import qualified SymMatrix               as M
 import           Types
 import           Utilities
@@ -64,7 +67,7 @@ wPGMA leafNames distMatrix outgroup =
         treeCost = getTreeCost wPGMATree'
     in
     --trace (show wPGMATree ++ "\n" ++ show wPGMATree')
-    ((take ((length newickString) - 3) newickString) ++ "[" ++ (show treeCost) ++ "];\n", wPGMATree', treeCost, finalMatrix)
+    (take (length newickString - 3) newickString ++ "[" ++ show treeCost ++ "];\n", wPGMATree', treeCost, finalMatrix)
     )
 
 -- | pulls dWagner function from module Wagner
@@ -92,7 +95,7 @@ neighborJoining leafNames distMatrix outgroup =
             treeCost = getTreeCost nJTree
         in
         --trace (show nJTree)
-        ((take ((length newickString) - 3) newickString) ++ "[" ++ (show treeCost) ++ "];\n", nJTree, treeCost, finalLittleDMatrix)
+        (take (length newickString - 3) newickString ++ "[" ++ show treeCost ++ "];\n", nJTree, treeCost, finalLittleDMatrix)
         )
 
 -- | sumAvail sums the row only thos values not already added to tree
@@ -107,12 +110,12 @@ sumAvail vertInList index distList
 
 -- | makeDMatrixRow make a single row of the bif D matrix
 makeDMatrixRow :: M.Matrix Double -> [Int] -> Int -> Int -> V.Vector Double
-makeDMatrixRow inObsMatrix vertInList column row =
-  if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
-  else if row `elem` vertInList then V.replicate (V.length (inObsMatrix V.! row)) NT.infinity
-  else if column == V.length (inObsMatrix V.! row) then V.empty
-  else if column == row then V.cons 0.0 (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
-  else if column `notElem` vertInList then
+makeDMatrixRow inObsMatrix vertInList column row
+  | M.null inObsMatrix = error "Null matrix in makeInitialDMatrix"
+  | row `elem` vertInList = V.replicate (V.length (inObsMatrix V.! row)) NT.infinity
+  | column == V.length (inObsMatrix V.! row) = V.empty
+  | column == row = V.cons 0.0 (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+  | column `notElem` vertInList =
     let dij = inObsMatrix M.! (row, column)
         divisor = (fromIntegral (M.rows inObsMatrix) - 2) - fromIntegral (length vertInList)
         ri  = (sumAvail vertInList 0 $ M.getFullRow inObsMatrix row)
@@ -120,8 +123,8 @@ makeDMatrixRow inObsMatrix vertInList column row =
         bigDij = dij - ((ri + rj) / divisor)
     in
     V.cons bigDij (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
-  else V.cons NT.infinity (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
-  
+      | otherwise = V.cons NT.infinity (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+
 
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
 -- assumes matrix is square and symmetrical
@@ -132,8 +135,8 @@ makeDMatrixRow inObsMatrix vertInList column row =
 makeDMatrix :: M.Matrix Double -> [Int] -> M.Matrix Double
 makeDMatrix inObsMatrix vertInList  =
   if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
-  else 
-      V.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..((M.rows inObsMatrix) - 1)]
+  else
+      V.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..(M.rows inObsMatrix - 1)]
 
 
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
@@ -166,8 +169,8 @@ pickNearestUpdateMatrixNJ :: M.Matrix Double -> [Int] -> (M.Matrix Double, Verte
 pickNearestUpdateMatrixNJ littleDMatrix  vertInList
   | M.null littleDMatrix = error "Null d matrix in pickNearestUpdateMatrix"
   | otherwise =
-    let (iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix littleDMatrix vertInList) vertInList 
-        --(iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix' littleDMatrix vertInList 0 0 []) vertInList 
+    let (iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix littleDMatrix vertInList) vertInList
+        --(iMin, jMin, distIJ) = getMatrixMinPairTabu (makeDMatrix' littleDMatrix vertInList 0 0 []) vertInList
     in
     --trace ("First pair " ++ show (iMin, jMin, distIJ) ++ " matrix: " ++ (show (makeDMatrix littleDMatrix vertInList))
     --  ++ "\nVertsIn: " ++ show vertInList ++ " matrix': " ++ show (makeDMatrix' littleDMatrix vertInList 0 0 [])) (
@@ -201,7 +204,7 @@ pickNearestUpdateMatrixNJ littleDMatrix  vertInList
           newEdgeJ = (newVertIndex, jMin, djMinNewVert)
         in
         (newLittleDMatrix, newVertIndex, newEdgeI, newEdgeJ, newVertInList)
-    --)    
+    --)
 
 -- | getNewDist get ditance of new vertex to existing vertices
 getNewDist :: M.Matrix Double -> Double-> Int -> Int -> Double -> Double -> Int -> Double
@@ -221,7 +224,7 @@ addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
   if V.length vertexVect == (2 * numLeaves) - 2 then
     let --(iMin, jMin, _) = getMatrixMinPairTabu  (makeDMatrix littleDMatrix vertInList) vertInList
         last2 = subtractVector (V.fromList vertInList) vertexVect
-        iMin = last2 V.! 0 
+        iMin = last2 V.! 0
         jMin = last2 V.! 1
         {-This is wrong--not last two
         iMin = vertexVect V.! ((V.length vertexVect) - 1)
@@ -230,8 +233,8 @@ addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
         lastEdge = (iMin, jMin, littleDMatrix M.! (iMin, jMin))
     in
     {-
-    trace (show last2 ++ " from " ++ show vertexVect ++ "\nlast edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show littleDMatrix) 
-      ++ " edge: " 
+    trace (show last2 ++ " from " ++ show vertexVect ++ "\nlast edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show littleDMatrix)
+      ++ " edge: "
       ++ (show lastEdge) ++ " vertInList: " ++ show vertInList)
       -}
     ((vertexVect, edgeVect `V.snoc` lastEdge), littleDMatrix)
@@ -244,9 +247,9 @@ addTaxaNJ littleDMatrix numLeaves (vertexVect, edgeVect) vertInList =
     --trace (M.showMatrixNicely newLittleDMatrix ++ "\n" ++ M.showMatrixNicely bigDMatrix)
     let progress = show  ((fromIntegral (100 * (V.length vertexVect - numLeaves))/fromIntegral (numLeaves - 2)) :: Double)
     in
-    trace (takeWhile (/='.') progress ++ "%") -- ++ (show (newVertexVect, newEdgeVect))) 
+    trace (takeWhile (/='.') progress ++ "%") -- ++ (show (newVertexVect, newEdgeVect)))
     addTaxaNJ newLittleDMatrix numLeaves (newVertexVect, newEdgeVect) newVertInList
-    
+
 
 -- | addTaxaWPGMA perfomrs recursive reduction of distance matrix until all internal vertices are created
 addTaxaWPGMA :: M.Matrix Double -> Int -> Tree -> [Int] -> (Tree, M.Matrix Double)
@@ -254,14 +257,14 @@ addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
   if V.length vertexVect == (2 * numLeaves) - 2 then
     let --(iMin, jMin, _) = getMatrixMinPairTabu distMatrix vertInList -- (-1, -1, NT.infinity) 0 0
         last2 = subtractVector (V.fromList vertInList) vertexVect
-        iMin = last2 V.! 0 
+        iMin = last2 V.! 0
         jMin = last2 V.! 1
         lastEdge = (iMin, jMin, distMatrix M.! (iMin, jMin))
     in
     {-
-    trace ((show last2) ++ " from " ++ show vertexVect ++ "\nlast edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show distMatrix) 
-      ++ " last edge: " 
-      ++ (show lastEdge) ++ " vertInList: " ++ (show vertInList) 
+    trace ((show last2) ++ " from " ++ show vertexVect ++ "\nlast edge: " ++ " size " ++ (show $ V.length vertexVect) ++ " matrix: " ++ (show distMatrix)
+      ++ " last edge: "
+      ++ (show lastEdge) ++ " vertInList: " ++ (show vertInList)
       ++ " all edges " ++ show (edgeVect `V.snoc` lastEdge))
       -}
     ((vertexVect, edgeVect `V.snoc` lastEdge), distMatrix)
@@ -274,9 +277,9 @@ addTaxaWPGMA distMatrix numLeaves (vertexVect, edgeVect) vertInList =
     --trace (M.showMatrixNicely distMatrix)
     let progress = show  ((fromIntegral (100 * (V.length vertexVect - numLeaves))/fromIntegral (numLeaves - 2)) :: Double)
     in
-    trace (takeWhile (/='.') progress ++ "%") 
+    trace (takeWhile (/='.') progress ++ "%")
     addTaxaWPGMA newDistMatrix numLeaves (newVertexVect, newEdgeVect) newVertInList
-      
+
 
 -- | pickUpdateMatrixWPGMA takes d matrix, pickes closesst based on d
 -- then updates d  to reflect new node and distances created
@@ -357,4 +360,4 @@ getWeightDescLink uVert fullEdgeList =
     in
     if eVert == uVert then weight
     else getWeightDescLink uVert (tail fullEdgeList)
-    
+

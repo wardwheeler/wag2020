@@ -42,15 +42,16 @@ Need to integerize costs for swapping very slow on Double values
 
 module Wagner (doWagnerS, performRefinement) where
 
-import qualified Data.Vector                       as V 
-import qualified SymMatrix                         as M
-import           Types
 import           Control.Parallel.Strategies
-import           Utilities
-import qualified Data.Number.Transfinite           as NT
-import           Debug.Trace
 import           Data.Maybe
-
+import qualified Data.Number.Transfinite     as NT
+import qualified Data.Vector                 as V
+import           Debug.Trace
+import           GeneralUtilities
+import           ParallelUtilities
+import qualified SymMatrix                   as M
+import           Types
+import           Utilities
 
 -- | getStartingPair returns starying pair for Wagner build
 --  closts mnimal cost pair
@@ -60,8 +61,8 @@ getStartingPair :: String -> M.Matrix Double -> Edge
 getStartingPair choiceOpt distMatrix
   | choiceOpt == "closest" = getMatrixMinPair distMatrix (-1, -1, NT.infinity) 0 0
   | choiceOpt == "furthest" = getMatrixMaxPair distMatrix (-1 , -1, 0 :: Double) 0 0
-  | choiceOpt == "random" = error "Initial pair option 'random' not yet implemented"
-  | otherwise = error ("Initial pair option " ++ choiceOpt ++ " unrecognized.  Must be 'closest', 'furthest', or 'random'")
+  | choiceOpt == "random" = errorWithoutStackTrace "Initial pair option 'random' not yet implemented"
+  | otherwise = errorWithoutStackTrace ("Initial pair option " ++ choiceOpt ++ " unrecognized.  Must be 'closest', 'furthest', or 'random'")
 
 -- | getBestEdgeTree take list of edge tuples and return trhe one with best addition cost
 getBestEdgeTree :: V.Vector (Double, Tree, M.Matrix Double) -> Double -> (Double, Tree, M.Matrix Double) -> (Double, Tree, M.Matrix Double)
@@ -168,7 +169,7 @@ wagBest distMatrix inTree leavesToAdd nOTUs newVertexIndex leavesToMap choiceOpt
 -- a tree (V,E) discription of Wagner tree with labelled internal veritices and branch lengths
 calculateWagnerTrees :: M.Matrix Double -> String -> (Tree, M.Matrix Double)
 calculateWagnerTrees distMatrix choiceOpt =
-  if M.dim distMatrix == (0,0) then error "Null distance matrix"
+  if M.dim distMatrix == (0,0) then errorWithoutStackTrace "Null distance matrix"
   else
     -- get initial pair of leaves and create initial tree
     let nOTUs = M.cols distMatrix
@@ -203,8 +204,8 @@ getRandomAdditionSequence leafNames distMatrix outgroup initiaLeavesToAdd =
   let thisTree = makeTreeFromOrder distMatrix initialTree nOTUs nOTUs leavesToAdd
       -- (_, edgeVect) = fst thisTree
       treeCost = getTreeCost $ fst thisTree -- V.sum $ V.map getEdgeCost edgeVect
-      newickTree = convertToNewick leafNames outgroup (fst thisTree)  
-      newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
+      newickTree = convertToNewick leafNames outgroup (fst thisTree)
+      newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
   in
   (newickTree', fst thisTree, treeCost, snd thisTree)
 
@@ -218,8 +219,8 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
      let wagnerResult = calculateWagnerTrees distMatrix firstPairMethod
          -- (_, edgeVect) = fst wagnerResult
          treeCost = getTreeCost $ fst wagnerResult --- V.sum $ V.map getEdgeCost edgeVect
-         newickTree = convertToNewick leafNames outgroup (fst wagnerResult)  
-         newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
+         newickTree = convertToNewick leafNames outgroup (fst wagnerResult)
+         newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
       in
       [(newickTree', fst wagnerResult, treeCost, snd wagnerResult)]
   else if addSequence == "asis" then
@@ -227,19 +228,19 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
           leavesToAdd = V.fromList [2..(nOTUs-1)]
           asIsResult = makeTreeFromOrder distMatrix initialTree nOTUs nOTUs leavesToAdd
           treeCost = getTreeCost $ fst asIsResult -- V.sum $ V.map getEdgeCost asIsEdges
-          newickTree = convertToNewick leafNames outgroup (fst asIsResult) 
-          newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
+          newickTree = convertToNewick leafNames outgroup (fst asIsResult)
+          newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision treeCost ++ "]" ++ ";"
       in
       [(newickTree', fst asIsResult, treeCost, snd asIsResult)]
   else if head addSequence == 'r' then
-      if null replicateSequences then error "Zero replicate additions specified--could be error in configuration file"
+      if null replicateSequences then errorWithoutStackTrace "Zero replicate additions specified--could be error in configuration file"
       else
         let (chunkSize, _) = quotRem (length replicateSequences) getNumThreads
             randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize myStrategy -- was rseq not sure whats better
             -- randomAddTrees = parmap rseq (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences
         in
         randomAddTrees
-  else error ("Addition sequence " ++ addSequence ++ " not implemented")
+  else errorWithoutStackTrace ("Addition sequence " ++ addSequence ++ " not implemented")
 
 -- | edgeHasVertex takes an vertex and an edge and returns Maybe Int
 -- of other vertex
@@ -354,7 +355,7 @@ getEndVertices inEdges index =
          (fEVertex, sUVertex)
       else
           (fEVertex, sEVertex)
-    else error ("Error findeing ends of " ++ show (V.head inEdges) ++ " and " ++ show (V.last inEdges))
+    else error ("Error finding ends of " ++ show (V.head inEdges) ++ " and " ++ show (V.last inEdges))
 
 -- | getContractedWeight gets edge contractd edge weights ither form distMatrix for  OTUs or 1 OTU and 1
 -- internal wertex or by 4 point metric (maximum of two estimations)
@@ -552,7 +553,7 @@ sieveTrees inDelta curBestCost inAddList leafNames outgroup savedTrees =
           newCost = curBestCost - inDelta + firstDelta
           -- checkCost = getTreeCost firstTree
           newickTree = convertToNewick leafNames outgroup firstTree
-          newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
+          newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
           newTuple = (newickTree', firstTree, newCost, firstMatrix)
       in
       if firstDelta > inDelta then sieveTrees inDelta curBestCost  (V.tail inAddList) leafNames outgroup savedTrees
@@ -629,7 +630,7 @@ createVectorEdgePairs pairSet previousEdges eEdgeVect uEdgeVect
     in
     V.map (V.cons eEdgePrev) $ V.map V.singleton uEdgeVect
   | pairSet == "tbr" = getVectorAllVectorPairs eEdgeVect uEdgeVect
-  | otherwise = error ("Pair set option " ++ pairSet ++ " not implemented")
+  | otherwise = errorWithoutStackTrace ("Pair set option " ++ pairSet ++ " not implemented")
 
 
 -- | addEdgeToSplitRecurse like addToEdgeSplit but recursiblye yeilds a single best tree
@@ -703,7 +704,7 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
             (newDelta, newTree, newMatrix) = addToEdgeSwapRecurse delta distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex uEdgeVect
             newCost = curBestCost - delta + newDelta
             newickTree = convertToNewick leafNames outGroup newTree
-            newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
+            newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
         in
         if newCost < curBestCost then (newickTree', newTree, newCost, newMatrix)
         else origTree
@@ -717,10 +718,10 @@ doSPRTBRSteep rejoinType curBestCost leafNames outGroup split origTree@(_, inTre
               (newDelta, newTree, newMatrix) = addEdgeToSplitRecurse eEdgeVect uEdgeVect eTerminal uTerminal distMatrix edgesToConnect (delta, inTree, inMatrix)
               newCost = curBestCost - delta + newDelta
               newickTree = convertToNewick leafNames outGroup newTree
-              newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
+              newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
           in
-          if newCost < curBestCost then 
-            --trace ("->" ++ show newCost) 
+          if newCost < curBestCost then
+            --trace ("->" ++ show newCost)
             (newickTree', newTree, newCost, newMatrix)
           else origTree
 
@@ -741,10 +742,10 @@ reAddTerminalsSteep rejoinType curBestCost leafNames outGroup split origTree =
           (newDelta, newTree, newMatrix) = addToEdgeSwapRecurse delta distMatrix (fst3 $ V.head eEdgeVect) (V.empty,uEdgeVect) newLeafIndex uEdgeVect -- (V.tail uEdgeVect) -- tail so not hit original tree, leave all to reestimate if necesary
           newCost = curBestCost - delta + newDelta
           newickTree = convertToNewick leafNames outGroup newTree
-          newickTree' = (take ((length newickTree) - 3) newickTree) ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
+          newickTree' = take (length newickTree - 3) newickTree ++ "[" ++ showDouble precision newCost ++ "]" ++ ";"
       in
-      if newCost < curBestCost then 
-        --trace ("->" ++ show newCost) 
+      if newCost < curBestCost then
+        --trace ("->" ++ show newCost)
         (newickTree', newTree, newCost, newMatrix)
       else origTree
 
@@ -893,4 +894,4 @@ performRefinement refinement saveMethod keepMethod leafNames outGroup inTree
     else
       trace "TBR swap did not find any new trees"
       [inTree]
-  | otherwise = error ("Unrecognized refinement method: " ++ refinement)
+  | otherwise = errorWithoutStackTrace ("Unrecognized refinement method: " ++ refinement)

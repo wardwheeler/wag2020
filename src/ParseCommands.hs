@@ -43,7 +43,7 @@ Todo:
 
 module ParseCommands (processParamString) where
 
-import qualified Data.Text.Lazy         as T
+import qualified Data.Text.Lazy as T
 -- import           Debug.Trace
 import           Data.Array
 
@@ -129,7 +129,7 @@ getOption optionString dataFileString commandLines =
   if null commandLines then
     -- return defaults or error
    case optionString of
-        "input"             -> error "No input data file specified"
+        "input"             -> errorWithoutStackTrace "No input data file specified"
         "stub"              -> dataFileString
         "output"            -> dataFileString ++ ".tre"
         "firstPairChoice"   -> "closest"
@@ -140,7 +140,7 @@ getOption optionString dataFileString commandLines =
         "outputSet"         -> "best"
         "keepSet"           -> "first"
         "excludedTaxa"      -> []
-        _                   -> error ("Option " ++ optionString ++ " not specified and has no default")
+        _                   -> errorWithoutStackTrace ("Option " ++ optionString ++ " not specified and has no default")
   else -- case invariant
       let firstLine = head commandLines
           parameterString = tail $ dropWhile (/= ':') firstLine
@@ -148,10 +148,10 @@ getOption optionString dataFileString commandLines =
           commandString = T.toLower $ T.pack $ takeWhile (/= ':') firstLine
           inOption = T.toLower $ T.pack optionString
       in
-      if (T.unpack commandString) `notElem` allowedCommandList then
+      if T.unpack commandString `notElem` allowedCommandList then
         let (editCost, bestMatch) = getBestMatch (maxBound :: Int ,"no suggestion") allowedCommandList (T.unpack commandString)
         in
-        error ("\n\nError in command specification (case insensitive) unrecognized command:" ++ getCommandErrorString [(editCost, T.unpack commandString, bestMatch)])
+        errorWithoutStackTrace ("\n\nError in command specification (case insensitive) unrecognized command:" ++ getCommandErrorString [(editCost, T.unpack commandString, bestMatch)])
       else if inOption == commandString then
           if optionString `elem` ["input","output","stub","outgroup","excludedTaxa"] then parameterString
           else  parameterStringLC
@@ -163,7 +163,7 @@ getOption optionString dataFileString commandLines =
 -- outputTreeFile, keep method
 processParamString :: String -> Bool -> [String]
 processParamString fileString isFile =
-  if null fileString then error "Empty parameter file"
+  if null fileString then errorWithoutStackTrace "Empty parameter file"
   else
       let commandLines      = if isFile then  cleanUpParamFile fileString else words fileString
           inputFile         = filter (/= '"') $ getOption "input" "" commandLines
@@ -179,7 +179,7 @@ processParamString fileString isFile =
           excludedTaxa      = getOption "excludedTaxa" inputFile commandLines
       in
       -- check for unset options-> throw error
-      if null inputFile then error "No input file specified"
+      if null inputFile then errorWithoutStackTrace "No input file specified"
 
       else [inputFile, firstPair, outgroup, additionSequence, refinement, buildSelect, saveMethod, stub, outputTreeFile, keepMethod,excludedTaxa]
 

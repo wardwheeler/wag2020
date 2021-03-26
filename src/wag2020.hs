@@ -55,33 +55,29 @@ To do:
 
 
 -}
-{-# LANGUAGE BangPatterns #-}
 
 module Main where
 
+import qualified Control.Monad.Parallel        as CMP
 import           Data.CSV
+import qualified Data.GraphViz                 as GV
+import           Data.GraphViz.Printing
 import           Data.List
 import           Data.Maybe
-import qualified Data.Vector                       as V hiding (replicateM)
+import qualified Data.Number.Transfinite       as NT
+import qualified Data.Text.Lazy                as T
+import qualified Data.Vector                   as V hiding (replicateM)
 import           Debug.Trace
+import           DistanceMethods
+import           GeneralUtilities
+import           Immutable.Shuffle
+import           ParallelUtilities
+import           ParseCommands
+import qualified SymMatrix                     as M
 import           System.Environment
 import           System.IO
 import           Text.ParserCombinators.Parsec
-import qualified Control.Monad.Parallel            as CMP
--- import qualified Data.Graph.Inductive.Graph        as G
--- import qualified Data.Graph.Inductive.PatriciaTree as P
-import qualified Data.GraphViz                     as GV
-import           Data.GraphViz.Printing
-import qualified Data.Number.Transfinite           as NT
---import qualified Data.Set                          as Set
-import qualified Data.Text.Lazy                    as T
-import           Immutable.Shuffle
-import qualified SymMatrix                         as M
-import           DistanceMethods
---import           Types
 import           Utilities
-import           ParseCommands
--- import Control.Monad (replicateM)
 
 
 
@@ -127,7 +123,7 @@ makeNewData taxonIndexList inData rowNum
 -- with top line of taxon names
 deleteTaxa :: [String] -> [[String]] -> [[String]]
 deleteTaxa toDeleteList inData
-  | null inData = error "Empty input data in deleteTaxa (empty data file)"
+  | null inData = errorWithoutStackTrace "Empty input data in deleteTaxa (empty data file)"
   | null toDeleteList = inData
   | otherwise =
     let taxonList = head inData
@@ -148,7 +144,7 @@ getOutgroup outString leafNames =
   else
     let outElem = V.elemIndex outString leafNames
     in
-    if isNothing outElem then error ("Outgroup name " ++ outString ++ " not found")
+    if isNothing outElem then errorWithoutStackTrace ("Outgroup name " ++ outString ++ " not found")
     else
       trace ("\nRooting on leaf: " ++ outString)
       fromJust outElem
@@ -157,7 +153,7 @@ getOutgroup outString leafNames =
 getRandomReps :: String -> Int
 getRandomReps inString
   | head inString /= 'r' = 0
-  | length inString < 8 = error ("Need to specify repicate number after '=' in " ++ inString)
+  | length inString < 8 = errorWithoutStackTrace ("Need to specify repicate number after '=' in " ++ inString)
   | otherwise = read (drop 7 inString) :: Int
 
 
@@ -167,13 +163,13 @@ main =
   do
     -- Process arguments
     args <- getArgs
-    if length args == 0 then error "Need to specify a single parameter file or commandline options"
+    if null args then errorWithoutStackTrace "Need to specify a single parameter file or commandline options"
     else if length args == 1 then hPutStrLn stderr ("Openning parameter file " ++ head args)
-    else hPutStrLn stderr ("Processing commandline options: " ++ concat (fmap (++ "\n") args))
+    else hPutStrLn stderr ("Processing commandline options: " ++ unlines args)
 
     -- Get params from input file
-    paramFile <- if (length args == 1) then readFile (head args) else (return "")
-    let paramList = if length args == 1 then processParamString paramFile True else processParamString (concat $ intersperse " " args) False
+    paramFile <- if length args == 1 then readFile (head args) else return ""
+    let paramList = if length args == 1 then processParamString paramFile True else processParamString (unwords args) False
     let dataFile = head paramList
     let firstPairMethod = paramList !! 1 -- should be closest, furthest, random
     let outgroup = filter (/= '"') $ paramList !! 2
@@ -188,7 +184,7 @@ main =
 
     csvResult <- parseFromFile csvFile dataFile
     let rawDataInit = case csvResult of
-                      Left err -> error $ "Error parsing " ++ dataFile ++ " " ++ show err
+                      Left err -> errorWithoutStackTrace $ "Error parsing " ++ dataFile ++ " " ++ show err
                       Right result -> result
     let rawData = filter (/=[""]) rawDataInit -- remove crap from csv
 
@@ -211,11 +207,11 @@ main =
     hPutStrLn stderr ("Output set: " ++ saveMethod )
 
     -- Checks on input distances
-    if V.length leafNames /= length (tail rawData') then error ("Input matrix is not square: " ++ show (V.length leafNames) ++ " leaves and " ++
+    if V.length leafNames /= length (tail rawData') then errorWithoutStackTrace ("Input matrix is not square: " ++ show (V.length leafNames) ++ " leaves and " ++
       show (length $ tail rawData') ++ " rows")
     else hPutStrLn stderr ("Input distance data for " ++ show (V.length leafNames) ++ " leaves")
     let rowLengthCheck = foldl' (&&) True $ fmap ((== V.length leafNames) . length) (tail rawData')
-    if not rowLengthCheck then error "Row lengths do not equal leaf number"
+    if not rowLengthCheck then errorWithoutStackTrace "Row lengths do not equal leaf number"
     else hPutStrLn stderr "Input matrix is square"
 
 
@@ -228,18 +224,19 @@ main =
     _ <- if nonNegative' then
                 hPutStrLn stderr "Input distances non-negative"
             else
-                error "Input distance has negative values--must all be >= 0.0"
+                errorWithoutStackTrace "Input distance has negative values--must all be >= 0.0"
 
     -- Callan random shuffle
     let randomAddsToDo = getRandomReps addSequence
     let testLeavesVect = V.fromList [0..(V.length leafNames - 1)]
     -- let (chunkSize, _) = quotRem randomAddsToDo getNumThreads
-    
-    -- Wagner build and refine 
+
+    -- Wagner build and refine
     shuffledList <- CMP.replicateM randomAddsToDo (shuffleM testLeavesVect) -- `using` parListChunk chunkSize rdeepseq
-    let !treeList = if (head addSequence) == 'n' then [neighborJoining leafNames distMatrix outElem]
-                    else if (head addSequence) == 'w' then [wPGMA leafNames distMatrix outElem]
-                    else doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
+    let !treeList
+          | head addSequence == 'n' = [neighborJoining leafNames distMatrix outElem]
+          | head addSequence == 'w' = [wPGMA leafNames distMatrix outElem]
+          | otherwise = doWagnerS leafNames distMatrix firstPairMethod outElem addSequence shuffledList
 
     -- Filter trees from build
     let !filteredTrees = keepTrees treeList buildSelect keepMethod NT.infinity -- modify to keep Tree best as well
