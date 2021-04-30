@@ -49,10 +49,11 @@ import qualified Data.Vector                 as V
 import           Debug.Trace
 import           GeneralUtilities
 import           ParallelUtilities
-import qualified SymMatrixSeq                   as M
+import qualified SymMatrix                   as M
 import           Types
 import           Utilities
-import qualified LocalSequence as LS
+--import qualified LocalSequence as LS
+import qualified Data.Vector as LS
 
 -- | getStartingPair returns starying pair for Wagner build
 --  closts mnimal cost pair

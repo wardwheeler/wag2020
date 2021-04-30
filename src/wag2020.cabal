@@ -70,7 +70,7 @@ executable wag2020
   hs-source-dirs: . ../../PhyloLibs 
 
 
-  other-modules:  SymMatrixSeq
+  other-modules:  SymMatrix
                 , DistanceMethods 
                 , Types 
                 , Utilities 
@@ -80,4 +80,4 @@ executable wag2020
                 , GeneralUtilities
                 , ParallelUtilities
                 , Cyclic
-                , LocalSequence
+                

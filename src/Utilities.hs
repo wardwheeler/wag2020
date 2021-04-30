@@ -48,12 +48,13 @@ import qualified Data.Vector                       as V
 import           GeneralUtilities
 import qualified GraphFormatUtilities              as PP
 import           ParallelUtilities
-import qualified SymMatrixSeq                         as M
+import qualified SymMatrix                         as M
 import           System.IO.Unsafe
 import qualified System.Random                     as Rand
 import qualified System.Random.Shuffle             as RandS
 import           Types
-import qualified LocalSequence as LS
+--import qualified LocalSequence as LS
+import qualified Data.Vector as LS
 
 
 -- | localRoundtakes a double multiplies by 10^precisoin, rounds to integer then divides

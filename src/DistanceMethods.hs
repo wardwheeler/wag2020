@@ -44,11 +44,12 @@ import qualified Data.Number.Transfinite as NT
 import qualified Data.Vector             as V
 import           Debug.Trace
 import           ParallelUtilities
-import qualified SymMatrixSeq               as M
+import qualified SymMatrix               as M
 import           Types
 import           Utilities
 import qualified Wagner                  as W
-import qualified LocalSequence as LS
+--import qualified LocalSequence as LS
+import qualified Data.Vector as LS
 
 -- | wPGMA takes a list of leaves and a distance matrixx and returns
 -- an WGPGMA tree
@@ -110,7 +111,7 @@ sumAvail vertInList index distList
   firstDist + sumAvail vertInList (index + 1) (tail distList)
 
 -- | makeDMatrixRow make a single row of the bif D matrix
-makeDMatrixRow :: M.Matrix Double -> [Int] -> Int -> Int -> LS.Seq Double
+makeDMatrixRow :: M.Matrix Double -> [Int] -> Int -> Int -> V.Vector Double -- LS.Seq Double
 makeDMatrixRow inObsMatrix vertInList column row
   | M.null inObsMatrix = error "Null matrix in makeInitialDMatrix"
   | row `elem` vertInList = LS.replicate (LS.length (inObsMatrix LS.! row)) NT.infinity

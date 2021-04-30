@@ -76,12 +76,13 @@ import           GeneralUtilities
 import           Immutable.Shuffle
 import           ParallelUtilities
 import           ParseCommands
-import qualified SymMatrixSeq                     as M
+import qualified SymMatrix                     as M
 import           System.Environment
 import           System.IO
 import           Text.ParserCombinators.Parsec
 import           Utilities
-import qualified LocalSequence as LS
+--import qualified LocalSequence as LS
+import qualified Data.Vector as LS
 
 
 
