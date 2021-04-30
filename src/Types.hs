@@ -38,7 +38,7 @@ Portability :  portable (I hope)
 module Types where
 
 import qualified Data.Vector as V
-import qualified SymMatrix   as M
+import qualified SymMatrixSeq   as M
 
 type Vertex = Int
 type Weight = Double

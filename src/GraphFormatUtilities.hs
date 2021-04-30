@@ -127,7 +127,12 @@ module GraphFormatUtilities (forestEnhancedNewickStringList2FGLList,
                              convertGraphToStrictText,
                              splitVertexList,
                              relabelFGLEdgesDouble,
-                             getDistToRoot
+                             getDistToRoot,
+                             fgl2DotString,
+                             modifyVertexEdgeLabels,
+                             relabelGraphLeaves,
+                             checkGraphsAndData,
+                             cyclic
                             ) where
 
 import           Control.Parallel.Strategies
@@ -143,10 +148,13 @@ import qualified Data.Text.Lazy                    as T
 import           Data.GraphViz                     as GV
 import           Data.GraphViz.Attributes.Complete (Attribute (Label),
                                                     Label (..))
+import qualified Data.GraphViz.Printing            as GVP
 import           Data.Monoid
 import           GeneralUtilities
 import           ParallelUtilities
+import qualified Cyclic                            as C
 
+--import qualified Data.Graph.Analysis  as GAC  currently doesn't compile (wanted to use for cycles)
 --import           Debug.Trace
 
 
@@ -1017,4 +1025,81 @@ convertGraphToStrictText inGraph =
     in
     G.mkGraph (zip nodeIndices nodesStrictText) (G.labEdges inGraph)
 
+-- | fgl2DotString takes an FGL graph and returns a String 
+fgl2DotString :: (Labellable a, Labellable b) => P.Gr a b -> String
+fgl2DotString inGraph =
+  T.unpack $ GVP.renderDot $ GVP.toDot $ GV.graphToDot GV.quickParams inGraph
+
+ -- | modifyVertexEdgeLabels keeps or removes vertex and edge labels
+modifyVertexEdgeLabels :: (Show b) => Bool -> Bool -> P.Gr String b -> P.Gr String String
+modifyVertexEdgeLabels keepVertexLabel keepEdgeLabel inGraph =
+  let inLabNodes = G.labNodes inGraph
+      degOutList = G.outdeg inGraph <$> G.nodes inGraph
+      nodeOutList = zip  degOutList inLabNodes
+      leafNodeList = snd <$> filter ((==0).fst) nodeOutList
+      nonLeafNodeList = snd <$> filter ((>0).fst) nodeOutList
+      newNonLeafNodes = if keepVertexLabel then nonLeafNodeList
+                        else zip (fmap fst nonLeafNodeList) (replicate (length nonLeafNodeList) "")
+      inLabEdges = G.labEdges inGraph
+      inEdges = fmap G.toEdge inLabEdges
+      newEdges = if keepEdgeLabel then fmap showLabel inLabEdges
+                 else fmap (`G.toLEdge` "") inEdges
+  in
+  G.mkGraph (leafNodeList ++ newNonLeafNodes) newEdges
+    where showLabel (e,u,l) = (e,u,show l)
+
+-- | relabelLeaf takes list of pairs and if current leaf label
+-- is snd in a pair, it replaces the label with the first of the pair
+relabelLeaf :: [(T.Text, T.Text)] -> G.LNode T.Text -> G.LNode T.Text
+relabelLeaf namePairList leafNode =
+  if null namePairList then leafNode
+  else 
+    let foundName = find ((== (snd leafNode)) .snd) namePairList 
+    in
+    if foundName == Nothing then leafNode
+    else (fst leafNode, (fst $ fromJust foundName))
+
+    
+-- | relabelGraphLeaves takes and FGL graph T.Text Double and renames based on pair of Text
+-- old name second, new name first in pair
+relabelGraphLeaves :: [(T.Text, T.Text)] -> P.Gr T.Text Double -> P.Gr T.Text Double
+relabelGraphLeaves namePairList inGraph =
+  if null namePairList then inGraph
+  else if G.isEmpty inGraph then inGraph
+  else 
+      let (rootVerts, leafList, otherVerts) = splitVertexList inGraph
+          edgeList = G.labEdges inGraph
+          newLeafList =  fmap (relabelLeaf namePairList) leafList
+      in
+      G.mkGraph (newLeafList ++ rootVerts ++ otherVerts) edgeList
+
+-- | checkGraphsAndData leaf names (must be sorted) and a graph
+-- nedd to add other sanity checks
+-- does not check for cycles becasue that is done on input
+checkGraphsAndData :: [T.Text] -> P.Gr T.Text Double -> P.Gr T.Text Double
+checkGraphsAndData leafNameList inGraph =
+  if G.isEmpty inGraph then inGraph
+  else if null leafNameList then error "Empty leaf name list"
+  else 
+    let (_, leafList, _) = splitVertexList inGraph
+        graphLeafNames = sort $ fmap snd leafList
+        nameGroupsGT1 = filter ((>1).length) $ group graphLeafNames
+    in
+    -- check for repeated terminals
+    if not $ null nameGroupsGT1 then errorWithoutStackTrace ("Input graph has repeated leaf labels" ++ 
+      (show $ fmap head nameGroupsGT1))
+    -- check for leaf complement identity 
+    else if leafNameList /= graphLeafNames then 
+      let inBoth = intersect leafNameList graphLeafNames
+          onlyInData = leafNameList \\ inBoth
+          onlyInGraph = graphLeafNames \\ inBoth
+      in
+      errorWithoutStackTrace ("Data leaf list does not match graph leaf list: \n\tOnly in data : " ++ show onlyInData 
+        ++ "\n\tOnly in Graph " ++ show onlyInGraph)
+    
+    else inGraph
+
+-- | cyclic maps to cyclic funcitn in moduel Cyclic.hs
+cyclic :: (G.DynGraph g) => g a b -> Bool
+cyclic inGraph = C.cyclic inGraph
 

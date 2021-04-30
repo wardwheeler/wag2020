@@ -44,10 +44,11 @@ import qualified Data.Number.Transfinite as NT
 import qualified Data.Vector             as V
 import           Debug.Trace
 import           ParallelUtilities
-import qualified SymMatrix               as M
+import qualified SymMatrixSeq               as M
 import           Types
 import           Utilities
 import qualified Wagner                  as W
+import qualified LocalSequence as LS
 
 -- | wPGMA takes a list of leaves and a distance matrixx and returns
 -- an WGPGMA tree
@@ -109,12 +110,12 @@ sumAvail vertInList index distList
   firstDist + sumAvail vertInList (index + 1) (tail distList)
 
 -- | makeDMatrixRow make a single row of the bif D matrix
-makeDMatrixRow :: M.Matrix Double -> [Int] -> Int -> Int -> V.Vector Double
+makeDMatrixRow :: M.Matrix Double -> [Int] -> Int -> Int -> LS.Seq Double
 makeDMatrixRow inObsMatrix vertInList column row
   | M.null inObsMatrix = error "Null matrix in makeInitialDMatrix"
-  | row `elem` vertInList = V.replicate (V.length (inObsMatrix V.! row)) NT.infinity
-  | column == V.length (inObsMatrix V.! row) = V.empty
-  | column == row = V.cons 0.0 (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+  | row `elem` vertInList = LS.replicate (LS.length (inObsMatrix LS.! row)) NT.infinity
+  | column == LS.length (inObsMatrix LS.! row) = LS.empty
+  | column == row = LS.cons 0.0 (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
   | column `notElem` vertInList =
     let dij = inObsMatrix M.! (row, column)
         divisor = (fromIntegral (M.rows inObsMatrix) - 2) - fromIntegral (length vertInList)
@@ -122,8 +123,8 @@ makeDMatrixRow inObsMatrix vertInList column row
         rj  = (sumAvail vertInList 0 $ M.getFullRow inObsMatrix column)
         bigDij = dij - ((ri + rj) / divisor)
     in
-    V.cons bigDij (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
-      | otherwise = V.cons NT.infinity (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+    LS.cons bigDij (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
+      | otherwise = LS.cons NT.infinity (makeDMatrixRow inObsMatrix vertInList (column + 1) row)
 
 
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
@@ -136,7 +137,7 @@ makeDMatrix :: M.Matrix Double -> [Int] -> M.Matrix Double
 makeDMatrix inObsMatrix vertInList  =
   if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
   else
-      V.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..(M.rows inObsMatrix - 1)]
+      LS.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..(M.rows inObsMatrix - 1)]
 
 
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
@@ -194,7 +195,7 @@ pickNearestUpdateMatrixNJ littleDMatrix  vertInList
           -- get distances to existing vertices
           otherVertList = [0..(M.rows littleDMatrix - 1)]
           newLittleDRow = seqParMap myStrategy (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList
-          newLittleDMatrix = M.addMatrixRow littleDMatrix (V.fromList $ newLittleDRow ++ [0.0])
+          newLittleDMatrix = M.addMatrixRow littleDMatrix (LS.fromList $ newLittleDRow ++ [0.0])
           -- recalculate whole D matrix since new row affects all the original ones  (except those merged)
           -- included vertex values set to infinity so won't be chosen later
           -- newBigDMatrix = makeDMatrix newLittleDMatrix newVertInList -- 0 0 []
@@ -305,7 +306,7 @@ pickUpdateMatrixWPGMA distMatrix  vertInList =
               -- get distances to existing vertices
               otherVertList = [0..(M.rows distMatrix - 1)]
               newDistRow = seqParMap myStrategy (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList
-              newDistMatrix = M.addMatrixRow distMatrix (V.fromList $ newDistRow ++ [0.0])
+              newDistMatrix = M.addMatrixRow distMatrix (LS.fromList $ newDistRow ++ [0.0])
 
               -- create new edges
               newEdgeI = (newVertIndex, iMin, diMinNewVert)

@@ -76,11 +76,12 @@ import           GeneralUtilities
 import           Immutable.Shuffle
 import           ParallelUtilities
 import           ParseCommands
-import qualified SymMatrix                     as M
+import qualified SymMatrixSeq                     as M
 import           System.Environment
 import           System.IO
 import           Text.ParserCombinators.Parsec
 import           Utilities
+import qualified LocalSequence as LS
 
 
 
@@ -223,7 +224,7 @@ main =
 
     -- Check that distances are non-negative
     let nonNegative =  M.map (>= 0.0) distMatrix
-    let nonNegative' = foldl' (&&) True $ V.map (foldl' (&&) True) nonNegative
+    let nonNegative' = foldl' (&&) True $ LS.map (foldl' (&&) True) nonNegative
     _ <- if nonNegative' then
                 hPutStrLn stderr "Input distances non-negative"
             else

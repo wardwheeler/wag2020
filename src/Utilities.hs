@@ -48,11 +48,12 @@ import qualified Data.Vector                       as V
 import           GeneralUtilities
 import qualified GraphFormatUtilities              as PP
 import           ParallelUtilities
-import qualified SymMatrix                         as M
+import qualified SymMatrixSeq                         as M
 import           System.IO.Unsafe
 import qualified System.Random                     as Rand
 import qualified System.Random.Shuffle             as RandS
 import           Types
+import qualified LocalSequence as LS
 
 
 -- | localRoundtakes a double multiplies by 10^precisoin, rounds to integer then divides
@@ -435,7 +436,7 @@ getVertexSet edgeVect =
 -- | getMinRowDistMatrix distMatrix tabuList
 getMinRowDistMatrix :: M.Matrix Double -> [Int] -> (Int, Double) -> Int -> Int -> (Int, Int, Double)
 getMinRowDistMatrix distMatrix tabuList minPair@(minCol, minVal) curColumn row
-  | curColumn == V.length (distMatrix V.! row) = (row, minCol, minVal)
+  | curColumn == LS.length (distMatrix LS.! row) = (row, minCol, minVal)
   | row `elem` tabuList = (-1,-1, NT.infinity)
   | curColumn == row = getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row
   | curColumn `elem` tabuList = getMinRowDistMatrix distMatrix tabuList minPair (curColumn + 1) row

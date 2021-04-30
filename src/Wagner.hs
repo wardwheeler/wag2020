@@ -49,9 +49,10 @@ import qualified Data.Vector                 as V
 import           Debug.Trace
 import           GeneralUtilities
 import           ParallelUtilities
-import qualified SymMatrix                   as M
+import qualified SymMatrixSeq                   as M
 import           Types
 import           Utilities
+import qualified LocalSequence as LS
 
 -- | getStartingPair returns starying pair for Wagner build
 --  closts mnimal cost pair
@@ -411,9 +412,9 @@ getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVert
 -- adds a single new row (minus last 0.0 as new row at end) which is appended
 getNewDistMatrix :: M.Matrix Double -> Double -> Double -> Double -> Int -> Int -> Int -> M.Matrix Double
 getNewDistMatrix origDist addCost eVertLeafDist uVertLeafDist eVertex uVertex leafIndex =
-    let columnHolder = V.fromList [0..(M.rows origDist - 1)] -- List of HTU and OTU indices in pairwise dist matrix
-        newDistRow = V.map (getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVertex) columnHolder
-        newDistRow' = newDistRow `V.snoc` (0.0 :: Double)
+    let columnHolder = LS.fromList [0..(M.rows origDist - 1)] -- List of HTU and OTU indices in pairwise dist matrix
+        newDistRow = LS.map (getDistance origDist addCost eVertLeafDist uVertLeafDist leafIndex eVertex uVertex) columnHolder
+        newDistRow' = newDistRow `LS.snoc` (0.0 :: Double)
     in
     M.addMatrixRow origDist newDistRow'
 
@@ -441,7 +442,7 @@ getNewDistMatrixInternal inMatrix newEdgeVect =
         newDistColumnI = fmap (enterNewEdgeCost numIn newEdgeVect) columnHolder ++ [0.0]
         newDistColumnII = fmap (enterNewEdgeCost (numIn + 1) newEdgeVect) columnHolder ++ [enterNewEdgeCost numIn newEdgeVect (numIn + 1), 0.0]
     in
-    M.addMatrices inMatrix  (V.fromList [V.fromList newDistColumnI, V.fromList newDistColumnII])
+    M.addMatrices inMatrix  (LS.fromList [LS.fromList newDistColumnI, LS.fromList newDistColumnII])
 
 -- | connectEdges takes two vectors of edges and adds and edge between the two in edgesToConnect
 -- this deletes the two old edges from the edge Vectors and creates a new tree with the five new edges
@@ -611,7 +612,7 @@ addToEdgeSwapRecurse inDelta distMatrix leaf initialTree newLeafIndex inEdgeVect
 
 -- | getVectorAllVectorPairs takes two vectors and creates a vector of avector of two elements each for each
 -- pairwise combinatrion of elements
-getVectorAllVectorPairs :: V.Vector a -> V.Vector a -> M.Matrix a
+getVectorAllVectorPairs :: V.Vector a -> V.Vector a -> V.Vector (V.Vector a)
 getVectorAllVectorPairs firstVect secondVect =
   if V.null firstVect then V.empty
   else

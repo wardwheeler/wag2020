@@ -59,14 +59,25 @@ executable wag2020
                 , monad-parallel
                 , sort
                 , array
+                , bv
+                , hashable
+                , time
+
                 
 
   default-language: Haskell2010
 
-  other-modules:  SymMatrix
+  hs-source-dirs: . ../../PhyloLibs 
+
+
+  other-modules:  SymMatrixSeq
                 , DistanceMethods 
                 , Types 
                 , Utilities 
                 , Wagner
-                , PhyloParsers
                 , ParseCommands
+                , GraphFormatUtilities
+                , GeneralUtilities
+                , ParallelUtilities
+                , Cyclic
+                , LocalSequence
