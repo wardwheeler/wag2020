@@ -41,8 +41,10 @@ Initial implementation stright Farris 1972
 
 To do:
   Create compact Newick or other rep for equality conparison of trees
+    bitvectorts?
 
   Newick smaller subtree left, bigger right for figtree output
+    count bits
 
   Test keep options and swapping on multiple input trees from build
 
@@ -51,8 +53,9 @@ To do:
   Clean up code--remove n^2 bad stuff
     TBR time complexity seems pretty awful--if corrrect
 
-  confirm time complexity for OTU, SPR, TBR
+  Change matrix to SymMatrixSeq for better time complexity on matrix updates
 
+  Change Vector type to Sequence for better cons/snoc 
 
 -}
 
