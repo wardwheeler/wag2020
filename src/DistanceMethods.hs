@@ -43,7 +43,8 @@ module DistanceMethods (neighborJoining, wPGMA, doWagnerS, performWagnerRefineme
 import qualified Data.Number.Transfinite as NT
 import qualified Data.Vector             as V
 import           Debug.Trace
-import           ParallelUtilities
+import qualified ParallelUtilities       as PU
+import Control.Parallel.Strategies
 import qualified SymMatrix               as M
 import           Types
 import           Utilities
@@ -138,8 +139,9 @@ makeDMatrix :: M.Matrix Double -> [Int] -> M.Matrix Double
 makeDMatrix inObsMatrix vertInList  =
   if M.null inObsMatrix then error "Null matrix in makeInitialDMatrix"
   else
-      LS.fromList $ seqParMap myStrategy (makeDMatrixRow inObsMatrix vertInList 0) [0..(M.rows inObsMatrix - 1)]
-
+      let newMatrix = fmap (makeDMatrixRow inObsMatrix vertInList 0) [0..(M.rows inObsMatrix - 1)] `using` PU.myParListChunkRDS
+      in
+      LS.fromList newMatrix
 
 -- | makeIDMatrix makes adjusted matrix (D) from observed (d) values
 -- assumes matrix is square and symmetrical
@@ -195,7 +197,7 @@ pickNearestUpdateMatrixNJ littleDMatrix  vertInList
 
           -- get distances to existing vertices
           otherVertList = [0..(M.rows littleDMatrix - 1)]
-          newLittleDRow = seqParMap myStrategy (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList
+          newLittleDRow = fmap (getNewDist littleDMatrix dij iMin jMin diMinNewVert djMinNewVert) otherVertList `using` PU.myParListChunkRDS
           newLittleDMatrix = M.addMatrixRow littleDMatrix (LS.fromList $ newLittleDRow ++ [0.0])
           -- recalculate whole D matrix since new row affects all the original ones  (except those merged)
           -- included vertex values set to infinity so won't be chosen later
@@ -306,7 +308,7 @@ pickUpdateMatrixWPGMA distMatrix  vertInList =
 
               -- get distances to existing vertices
               otherVertList = [0..(M.rows distMatrix - 1)]
-              newDistRow = seqParMap myStrategy (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList
+              newDistRow = fmap (getNewDistWPGMA distMatrix iMin jMin diMinNewVert djMinNewVert) otherVertList `using` PU.myParListChunkRDS
               newDistMatrix = M.addMatrixRow distMatrix (LS.fromList $ newDistRow ++ [0.0])
 
               -- create new edges
