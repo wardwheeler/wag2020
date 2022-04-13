@@ -142,6 +142,7 @@ getChildEdges vertIndex nLeaves inEdgeVect
     in
     if (a == vertIndex) || (b == vertIndex) then V.cons (a,b,w) (getChildEdges vertIndex nLeaves (V.tail inEdgeVect)) else getChildEdges vertIndex nLeaves (V.tail inEdgeVect)
 
+
 -- | directexEdges takes a vector of edges and outgrop index and directs the edges (parent -> child vertices) based on that
 directEdges :: Int -> Int -> Bool -> V.Vector Edge -> V.Vector Edge
 directEdges vertIndex nLeaves isFirst inEdgeVect
