@@ -20,33 +20,54 @@ executable wag2020
 
   main-is: wag2020.hs
 
-  ghc-options:  -Wall
-                -Wincomplete-patterns
-                -threaded 
-                -O2
-                -static
-                -XBangPatterns
-                -rtsopts
-                -- for weeder
- --               -fwrite-ide-info
-                -- for static linux
-                -optl-static -optl-pthread
-                -fllvm
+  if !os(darwin) 
+      ghc-options:
+        -Wall
+        -Wincomplete-patterns
+        -threaded 
+        -feager-blackholing
+        -with-rtsopts=-N
+        -O2
+        -rtsopts
+        -static
+        -fllvm
+    else 
+      ghc-options:
+        -Wall
+        -Wincomplete-patterns
+        -threaded 
+        -feager-blackholing
+        -with-rtsopts=-N
+        -O2
+        -rtsopts
+        -static
+        -- problems getting llvm to function in OSX (can't find opt)
+        -- -fllvm
 
--- delete these for OSX for linux static binaries
-  cc-options: -static
-  ld-options: -static -pthread
+
+    if !os(darwin) 
+      cc-options: 
+        -static
+    else 
+      cc-options:
+
+    if !os(darwin) 
+      ld-options: 
+        -static -pthread
+    else 
+      ld-options: 
+    
 
 --From matrices package (so 0 based)
 
   build-depends:  base >=4.10
-                , containers >=0.5
+                , containers >=0.6
                 , perfect-vector-shuffle
                 , vector 
                 , matrices 
                 , parallel
                 , split
-                , MissingH
+                , MissingH >= 1.4.3
                 , parsec
                 , deepseq
                 , process
@@ -64,6 +85,7 @@ executable wag2020
                 , time
 
                 
+  default-extensions: BangPatterns                
 
   default-language: Haskell2010
 
