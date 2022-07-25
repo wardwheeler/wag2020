@@ -1,4 +1,4 @@
-cabal-version:  2.2
+cabal-version:  3.4
 build-type:     Simple
 
 name:           wag2020
@@ -15,6 +15,10 @@ version:        0.1.0.0
 -- Need to add vector == 0.12.0.1 for ghc 8.4.4
 -- -optl-static -optl-pthread for static
 
+Source-Repository-Package head
+  type:     git
+  location: git@github.com:wardwheeler/PhyGraph.git
+  subdir:   pkg/PhyloLib
 
 executable wag2020
 
@@ -83,6 +87,8 @@ executable wag2020
                 , bv
                 , hashable
                 , time
+                , bv-little
+                
 
                 
   default-extensions: BangPatterns                
@@ -92,8 +98,7 @@ executable wag2020
   hs-source-dirs: . ../../PhyloLibs 
 
 
-  other-modules:  SymMatrix
-                , DistanceMethods 
+  other-modules: DistanceMethods
                 , Types 
                 , Utilities 
                 , Wagner
@@ -101,5 +106,6 @@ executable wag2020
                 , GraphFormatUtilities
                 , GeneralUtilities
                 , ParallelUtilities
+                , SymMatrix 
                 , Cyclic
                 

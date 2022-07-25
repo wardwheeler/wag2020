@@ -48,7 +48,7 @@ import qualified Data.Number.Transfinite     as NT
 import qualified Data.Vector                 as V
 import           Debug.Trace
 import           GeneralUtilities
-import           ParallelUtilities
+import qualified ParallelUtilities          as PU
 import qualified SymMatrix                   as M
 import           Types
 import           Utilities
@@ -237,8 +237,7 @@ doWagnerS leafNames distMatrix firstPairMethod outgroup addSequence replicateSeq
   else if head addSequence == 'r' then
       if null replicateSequences then errorWithoutStackTrace "Zero replicate additions specified--could be error in configuration file"
       else
-        let (chunkSize, _) = quotRem (length replicateSequences) getNumThreads
-            randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` parListChunk chunkSize myStrategy -- was rseq not sure whats better
+        let randomAddTrees = fmap (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences `using` PU.myParListChunkRDS -- was rseq not sure whats better
             -- randomAddTrees = parmap rseq (getRandomAdditionSequence leafNames distMatrix outgroup) replicateSequences
         in
         randomAddTrees
@@ -817,7 +816,7 @@ getGeneralSwapSteepestOne refineType swapFunction leafNames outGroup inTreeList 
   if null inTreeList then savedTrees
   else
       trace ("In "++ refineType ++ " Swap (steepest) with " ++ show (length inTreeList) ++ " trees with minimum length " ++ show (minimum $ fmap thd4 inTreeList)) (
-      let steepTreeList = seqParMap myStrategy (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList
+      let steepTreeList = fmap (splitJoinWrapper swapFunction refineType leafNames outGroup) inTreeList `using` PU.myParListChunkRDS
           steepCost = minimum $ fmap thd4 steepTreeList
       in
       --this to maintina the trajectories untill final swap--otherwise could converge down to single tree prematurely
@@ -839,9 +838,9 @@ getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup 
           overallBestCost = minimum $ fmap thd4 savedTrees
           (_, curTree, curTreeCost, curTreeMatrix) = curFullTree
           -- parallelize here
-          splitTreeList = seqParMap myStrategy (splitTree curTreeMatrix curTree curTreeCost) (snd curTree)
-          firstTreeList = seqParMap myStrategy (swapFunction refineType curTreeCost leafNames outGroup) splitTreeList
-          firstTreeList' = filterNewTreesOnCost overallBestCost  (curFullTree : concat (V.toList firstTreeList)) savedTrees -- keepTrees (concat $ V.toList firstTreeList) saveMethod overallBestCost
+          splitTreeList = fmap (splitTree curTreeMatrix curTree curTreeCost) (V.toList $ snd curTree)  `using` PU.myParListChunkRDS
+          firstTreeList = fmap (swapFunction refineType curTreeCost leafNames outGroup) splitTreeList  `using` PU.myParListChunkRDS
+          firstTreeList' = filterNewTreesOnCost overallBestCost  (curFullTree : concat firstTreeList) savedTrees -- keepTrees (concat $ V.toList firstTreeList) saveMethod overallBestCost
       in
       -- Work around for negative NT.infinity tree costs (could be dst matrix issue)
       if NT.isInfinite curTreeCost || null firstTreeList' then getGeneralSwap refineType swapFunction saveMethod keepMethod leafNames outGroup (tail inTreeList) savedTrees else (
