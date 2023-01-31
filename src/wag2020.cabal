@@ -1,4 +1,4 @@
-cabal-version:  3.4
+cabal-version:  3.8
 build-type:     Simple
 
 name:           wag2020
@@ -12,7 +12,8 @@ version:        0.1.0.0
 --license:        BSD3
 --license-file:   LICENSE
 
--- Need to add vector == 0.12.0.1 for ghc 8.4.4
+
+-- at command line "--enable-executable-static" for static binaries
 -- -optl-static -optl-pthread for static
 
 Source-Repository-Package head
@@ -22,44 +23,34 @@ Source-Repository-Package head
 
 executable wag2020
 
-  main-is: wag2020.hs
+  Main-is: wag2020.hs
 
-  if !os(darwin) 
-      ghc-options:
-        -Wall
-        -Wincomplete-patterns
-        -threaded 
-        -feager-blackholing
-        -with-rtsopts=-N
-        -O2
-        -rtsopts
-        -static
-        -fllvm
-    else 
-      ghc-options:
-        -Wall
-        -Wincomplete-patterns
-        -threaded 
-        -feager-blackholing
-        -with-rtsopts=-N
-        -O2
-        -rtsopts
-        -static
-        -- problems getting llvm to function in OSX (can't find opt)
-        -- -fllvm
-
-
-    if !os(darwin) 
-      cc-options: 
-        -static
-    else 
-      cc-options:
-
-    if !os(darwin) 
-      ld-options: 
-        -static -pthread
-    else 
-      ld-options: 
+  GHC-Options:
+    -Wall
+    -Wincomplete-patterns
+    -threaded 
+    -feager-blackholing
+    -O2
+    -rtsopts
+    -static
+    -fexcess-precision
+    -fexpose-all-unfoldings
+    -flate-specialise
+    -fmax-simplifier-iterations=16
+    -foptimal-applicative-do
+    -fspec-constr-count=8
+    -fspec-constr-keen
+    -fspecialize-aggressively
+    -fstatic-argument-transformation
+    "-with-rtsopts=-N -A64m -AL128M -H1024m -n4m -qa -qm"
+    
+  If !os(darwin)
+    GHC-Options:
+      -fllvm
+  else
+    GHC-Options:
+     -- -fllvm  
+     -- -optl-static -optl-pthread 
     
 
 --From matrices package (so 0 based)
